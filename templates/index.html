@@ -111,8 +111,22 @@
     .gallery-shell { max-width: 1200px; margin: 0 auto; }
     .gallery-tools {
       display: flex;
-      justify-content: flex-end;
-      margin: -1.4rem 0 1.5rem;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin: -1.2rem 0 1.5rem;
+      flex-wrap: wrap;
+    }
+    .gallery-intro {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .gallery-note {
+      font-size: 0.68rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-muted);
     }
     .gallery-toggle-btn {
       background: var(--accent-soft);
@@ -131,58 +145,134 @@
       background: rgba(78,205,196,0.15);
       border-color: var(--accent);
     }
-    .gallery-scene, .gallery-a3d { display: grid; }
-    .gallery-scene {
+    .gallery-carousel {
       position: relative;
-      place-items: center;
-      overflow: hidden;
-      min-height: clamp(26rem, 58vw, 36rem);
-      perspective: 42em;
-      border: none;
-      background: transparent;
-      mask: none;
-      -webkit-mask: none;
-      isolation: isolate;
-      touch-action: pan-y;
+      --slide-size: min(72vw, 31rem);
     }
-    .gallery-a3d {
-      --carousel-radius: 0px;
-      place-self: center;
-      place-items: center;
-      width: 100%;
-      min-height: inherit;
-      transform-style: preserve-3d;
-      animation: carouselSpin 32s linear infinite;
-      will-change: transform;
+    .gallery-carousel::before {
+      content: '';
+      position: absolute;
+      inset: 2rem 0 4rem;
+      background:
+        radial-gradient(circle at center, rgba(78,205,196,0.12) 0%, rgba(58,134,184,0.08) 35%, transparent 72%),
+        linear-gradient(180deg, rgba(17,32,32,0.25), rgba(8,15,15,0));
+      pointer-events: none;
+      filter: blur(8px);
     }
-    @keyframes carouselSpin { to { transform: rotateY(1turn); } }
-    .gallery-item {
-      --card-w: clamp(10.5rem, 20vw, 17.5rem);
-      grid-area: 1 / 1;
-      width: var(--card-w);
-      aspect-ratio: 7 / 10;
+    .gallery-carousel-viewport {
+      overflow-x: auto;
+      overflow-y: hidden;
+      scroll-snap-type: x mandatory;
+      scroll-padding-inline: calc((100% - var(--slide-size)) / 2);
+      padding-inline: calc(max(1rem, (100% - var(--slide-size)) / 2));
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      overscroll-behavior-x: contain;
+      touch-action: pan-x pinch-zoom;
       position: relative;
-      border-radius: 1.25rem;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.08);
-      backface-visibility: hidden;
+      z-index: 1;
+    }
+    .gallery-carousel-viewport::-webkit-scrollbar { display: none; }
+    .gallery-carousel-track {
+      display: flex;
+      align-items: stretch;
+      gap: 1.25rem;
+      width: max-content;
+      padding: 0.85rem 0 1.3rem;
+    }
+    .gallery-slide {
+      flex: 0 0 var(--slide-size);
+      width: var(--slide-size);
+      scroll-snap-align: center;
+      transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease, filter 0.35s ease;
+      opacity: 0.5;
+      transform: translateY(1.1rem) scale(0.92);
+      filter: saturate(0.8);
       cursor: pointer;
-      transform: rotateY(calc(var(--i) * 1turn / var(--n))) translateZ(var(--carousel-radius));
-      transform-origin: center center;
-      box-shadow: 0 16px 45px rgba(0,0,0,0.35);
     }
-    .gallery-item img,
+    .gallery-slide.is-nearby {
+      opacity: 0.78;
+      transform: translateY(0.45rem) scale(0.96);
+      filter: saturate(0.92);
+    }
+    .gallery-slide.is-active {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: saturate(1);
+    }
+    .gallery-slide-card {
+      position: relative;
+      height: clamp(24rem, 70vh, 36rem);
+      border-radius: 1.6rem;
+      overflow: hidden;
+      background:
+        linear-gradient(160deg, rgba(17,32,32,0.96), rgba(8,15,15,0.98));
+      border: 1px solid rgba(78,205,196,0.16);
+      box-shadow:
+        0 30px 70px rgba(0,0,0,0.38),
+        inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .gallery-slide-media {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .gallery-slide img,
     .gallery-collage-item img {
       width: 100%;
       height: 100%;
       object-fit: cover;
       display: block;
-      transition: transform 0.6s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.4s;
-      filter: brightness(0.88) saturate(0.9);
+      transition: transform 0.8s cubic-bezier(0.22,1,0.36,1), filter 0.45s ease;
+      filter: brightness(0.82) saturate(0.88);
     }
-    .gallery-item:hover img,
+    .gallery-slide.is-active img {
+      filter: brightness(0.98) saturate(1.02);
+      transform: scale(1.015);
+    }
+    .gallery-slide:hover img,
     .gallery-collage-item:hover img { transform: scale(1.04); filter: brightness(1) saturate(1.05); }
-    .gallery-item .caption-overlay,
+    .gallery-slide-media::after {
+      content: '';
+      position: absolute;
+      inset: auto 0 0;
+      height: 52%;
+      background: linear-gradient(to top, rgba(6,12,12,0.92), rgba(6,12,12,0.08) 62%, transparent);
+      pointer-events: none;
+    }
+    .gallery-slide-copy {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 2;
+      padding: 1.35rem 1.35rem 1.2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      align-items: flex-start;
+    }
+    .gallery-slide-index {
+      font-size: 0.62rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .gallery-slide-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(1.45rem, 3vw, 2.2rem);
+      line-height: 1.05;
+      color: #f6fffb;
+      text-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      max-width: 85%;
+    }
+    .gallery-slide-subtitle {
+      font-size: 0.76rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: rgba(223,245,239,0.62);
+    }
+    .gallery-slide .caption-overlay,
     .gallery-collage-item .caption-overlay {
       position: absolute;
       bottom: 0;
@@ -198,9 +288,9 @@
       transform: translateY(6px);
       transition: opacity 0.28s, transform 0.28s;
     }
-    .gallery-item:hover .caption-overlay,
+    .gallery-slide:hover .caption-overlay,
     .gallery-collage-item:hover .caption-overlay { opacity: 1; transform: translateY(0); }
-    .gallery-item .delete-btn,
+    .gallery-slide .delete-btn,
     .gallery-collage-item .delete-btn {
       position: absolute;
       top: 0.6rem;
@@ -217,25 +307,82 @@
       transition: opacity 0.25s, color 0.2s;
       font-family: 'Inter', sans-serif;
     }
-    .gallery-item:hover .delete-btn,
+    .gallery-slide:hover .delete-btn,
     .gallery-collage-item:hover .delete-btn { opacity: 1; }
-    .gallery-item .delete-btn:hover,
+    .gallery-slide .delete-btn:hover,
     .gallery-collage-item .delete-btn:hover { color: #ff6b6b; }
-    .gallery-fallback {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 1px;
-      background: var(--border-soft);
-      border: 1px solid var(--border);
+    .gallery-carousel-nav {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 clamp(0.25rem, 2vw, 0.8rem);
+      pointer-events: none;
+      z-index: 2;
     }
-    .gallery-fallback .gallery-item {
-      --n: 1;
-      --i: 0;
-      width: 100%;
+    .gallery-carousel-btn {
+      pointer-events: auto;
+      width: 3rem;
+      height: 3rem;
+      border-radius: 999px;
+      border: 1px solid rgba(78,205,196,0.2);
+      background: rgba(8,15,15,0.76);
+      color: var(--text-primary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      backdrop-filter: blur(18px);
+      box-shadow: 0 14px 28px rgba(0,0,0,0.24);
+      transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+    }
+    .gallery-carousel-btn:hover {
+      transform: scale(1.05);
+      background: rgba(17,32,32,0.9);
+      border-color: rgba(78,205,196,0.38);
+    }
+    .gallery-carousel-btn[disabled] {
+      opacity: 0.4;
+      cursor: default;
       transform: none;
-      border-radius: 0;
-      aspect-ratio: 3 / 4;
-      box-shadow: none;
+    }
+    .gallery-carousel-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 0.6rem;
+      position: relative;
+      z-index: 1;
+    }
+    .gallery-carousel-status {
+      font-size: 0.66rem;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .gallery-carousel-dots {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .gallery-carousel-dot {
+      width: 0.62rem;
+      height: 0.62rem;
+      border-radius: 999px;
+      border: 1px solid rgba(78,205,196,0.22);
+      background: transparent;
+      cursor: pointer;
+      transition: width 0.25s ease, background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+    }
+    .gallery-carousel-dot.is-active {
+      width: 1.9rem;
+      background: linear-gradient(135deg, var(--accent-3), var(--blue));
+      border-color: transparent;
+      transform: translateY(-1px);
     }
     .gallery-empty {
       padding: 5rem 2rem;
@@ -321,32 +468,6 @@
       min-height: 320px;
     }
     .gallery-collage-item:nth-child(7n + 6) { aspect-ratio: 1 / 1; }
-    .gallery-scene.carousel-flat {
-      display: block;
-      perspective: none;
-      overflow-x: auto;
-      overflow-y: hidden;
-      padding-bottom: 0.75rem;
-      scrollbar-width: thin;
-    }
-    .gallery-scene.carousel-flat .gallery-a3d {
-      display: flex;
-      align-items: stretch;
-      gap: 1rem;
-      width: max-content;
-      min-height: auto;
-      animation: none;
-      transform: none !important;
-      transform-style: flat;
-    }
-    .gallery-scene.carousel-flat .gallery-item {
-      flex: 0 0 min(78vw, 18rem);
-      width: min(78vw, 18rem);
-      transform: none !important;
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .gallery-a3d { animation-duration: 128s; }
-    }
     /* QUOTE */
     .quote-section { text-align: center; background: var(--bg); padding: 8rem 3rem; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); position: relative; overflow: hidden; }
     .quote-section::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(78,205,196,0.05) 0%, transparent 70%); pointer-events: none; }
@@ -419,9 +540,15 @@
       section { padding: 4rem 1.5rem; }
       .featured-grid { grid-template-columns: 1fr; }
       .photo-slot:first-child { grid-row: span 1; min-height: 300px; }
-      .gallery-tools { margin: -1.3rem 0 1.1rem; justify-content: flex-start; }
-      .gallery-scene { min-height: 23rem; }
-      .gallery-fallback { grid-template-columns: repeat(2, 1fr); }
+      .gallery-tools { margin: -1rem 0 1rem; align-items: flex-start; }
+      .gallery-carousel { --slide-size: min(84vw, 22rem); }
+      .gallery-carousel-track { gap: 0.85rem; padding-block: 0.5rem 1rem; }
+      .gallery-slide { transform: translateY(0.7rem) scale(0.94); }
+      .gallery-slide-card { height: 26rem; border-radius: 1.3rem; }
+      .gallery-slide-title { max-width: 100%; font-size: clamp(1.3rem, 7vw, 1.85rem); }
+      .gallery-carousel-nav { display: none; }
+      .gallery-carousel-footer { flex-direction: column; align-items: flex-start; }
+      .gallery-carousel-dots { justify-content: flex-start; }
       .gallery-collage-modal { width: 94vw; max-height: 90vh; padding: 1rem; }
       .gallery-collage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .gallery-collage-item:nth-child(7n + 1),
@@ -584,42 +711,55 @@
     <p class="section-label">Gallery</p>
     <h2 class="section-title">Every <em>little</em> moment</h2>
     {% if gallery %}
-      {% if gallery|length >= 3 %}
-        {% set carousel_photos = gallery[:3] %}
-        <div class="gallery-tools">
-          <button type="button" class="gallery-toggle-btn" onclick="openGalleryCollage()">See full collage</button>
+      {% set carousel_photos = gallery[:8] %}
+      <div class="gallery-tools">
+        <div class="gallery-intro">
+          <p class="gallery-note">A softer way to browse the moments we keep close.</p>
         </div>
-        <div class="gallery-scene">
-          <div class="gallery-a3d" style="--n: {{ carousel_photos|length }};">
+        {% if gallery|length >= 3 %}
+          <button type="button" class="gallery-toggle-btn" onclick="openGalleryCollage()">See full collage</button>
+        {% endif %}
+      </div>
+      <div class="gallery-carousel" data-carousel>
+        <div class="gallery-carousel-viewport" data-carousel-viewport>
+          <div class="gallery-carousel-track">
             {% for photo in carousel_photos %}
-              <article class="gallery-item"
-                style="--i: {{ loop.index0 }};"
+              <article class="gallery-slide{% if loop.first %} is-active{% endif %}"
+                data-carousel-slide
                 data-url="{{ photo.url }}"
                 data-caption="{{ photo.caption or '' }}">
-                <img src="{{ photo.url }}" alt="{{ photo.caption }}" loading="lazy"/>
-                {% if photo.caption %}<div class="caption-overlay">{{ photo.caption }}</div>{% endif %}
-                <form method="POST" action="/delete/{{ photo.id }}" onclick="event.stopPropagation()" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
-                  <button type="submit" class="delete-btn">Delete</button>
-                </form>
+                <div class="gallery-slide-card tilt">
+                  <div class="gallery-slide-media">
+                    <img src="{{ photo.url }}" alt="{{ photo.caption }}" loading="lazy"/>
+                    <div class="gallery-slide-copy">
+                      <p class="gallery-slide-index">Moment {{ loop.index }}</p>
+                      <p class="gallery-slide-title">{{ photo.caption or 'A favorite frame worth keeping close.' }}</p>
+                      <p class="gallery-slide-subtitle">Tap to open the full photo</p>
+                    </div>
+                    <form method="POST" action="/delete/{{ photo.id }}" onclick="event.stopPropagation()" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
+                      <button type="submit" class="delete-btn">Delete</button>
+                    </form>
+                  </div>
+                </div>
               </article>
             {% endfor %}
           </div>
         </div>
-      {% else %}
-        <div class="gallery-fallback">
-          {% for photo in gallery %}
-            <article class="gallery-item"
-              data-url="{{ photo.url }}"
-              data-caption="{{ photo.caption or '' }}">
-              <img src="{{ photo.url }}" alt="{{ photo.caption }}" loading="lazy"/>
-              {% if photo.caption %}<div class="caption-overlay">{{ photo.caption }}</div>{% endif %}
-              <form method="POST" action="/delete/{{ photo.id }}" onclick="event.stopPropagation()" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
-                <button type="submit" class="delete-btn">Delete</button>
-              </form>
-            </article>
-          {% endfor %}
-        </div>
-      {% endif %}
+        {% if carousel_photos|length > 1 %}
+          <div class="gallery-carousel-nav" aria-hidden="true">
+            <button type="button" class="gallery-carousel-btn" data-carousel-prev aria-label="Previous photo">&#10094;</button>
+            <button type="button" class="gallery-carousel-btn" data-carousel-next aria-label="Next photo">&#10095;</button>
+          </div>
+          <div class="gallery-carousel-footer">
+            <p class="gallery-carousel-status" data-carousel-status>1 / {{ carousel_photos|length }}</p>
+            <div class="gallery-carousel-dots">
+              {% for photo in carousel_photos %}
+                <button type="button" class="gallery-carousel-dot{% if loop.first %} is-active{% endif %}" data-carousel-dot="{{ loop.index0 }}" aria-label="Go to photo {{ loop.index }}"></button>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
     {% else %}
       <div class="gallery-empty" onclick="openModal()">
         <span>No photos yet</span>
@@ -856,7 +996,7 @@
   }, 3500);
   // ── TILT FX ──
 function bindGalleryLightbox() {
-  document.querySelectorAll('.gallery-item[data-url], .gallery-collage-item[data-url]').forEach(el => {
+  document.querySelectorAll('.gallery-slide[data-url], .gallery-collage-item[data-url]').forEach(el => {
     if (el.dataset.lightboxBound === '1') return;
     el.dataset.lightboxBound = '1';
 
@@ -971,183 +1111,111 @@ function initHeroGradientHover() {
   });
 }
 
-function initCarouselGeometry() {
-  const supports3d = typeof CSS !== 'undefined'
-    && CSS.supports('transform-style', 'preserve-3d')
-    && CSS.supports('transform', 'rotateY(1turn)');
+function initGalleryCarousel() {
+  document.querySelectorAll('[data-carousel]').forEach(carousel => {
+    if (carousel.dataset.carouselBound === '1') return;
+    carousel.dataset.carouselBound = '1';
 
-  document.querySelectorAll('.gallery-scene').forEach(scene => {
-    const track = scene.querySelector('.gallery-a3d');
-    const items = track ? Array.from(track.querySelectorAll('.gallery-item')) : [];
-    if (!track || !items.length) return;
+    const viewport = carousel.querySelector('[data-carousel-viewport]');
+    const slides = Array.from(carousel.querySelectorAll('[data-carousel-slide]'));
+    const prevBtn = carousel.querySelector('[data-carousel-prev]');
+    const nextBtn = carousel.querySelector('[data-carousel-next]');
+    const status = carousel.querySelector('[data-carousel-status]');
+    const dots = Array.from(carousel.querySelectorAll('[data-carousel-dot]'));
 
-    items.forEach((item, index) => {
-      item.style.setProperty('--i', String(index));
-    });
-    track.style.setProperty('--n', String(items.length));
+    if (!viewport || !slides.length) return;
 
-    const applyGeometry = () => {
-      if (!supports3d || items.length < 3) {
-        scene.classList.add('carousel-flat');
-        track.style.setProperty('--carousel-radius', '0px');
-        return;
+    let activeIndex = 0;
+    let scrollTimeoutId = null;
+
+    const formatIndex = value => String(value + 1).padStart(2, '0');
+    const totalLabel = String(slides.length).padStart(2, '0');
+
+    const setActive = index => {
+      activeIndex = index;
+
+      slides.forEach((slide, slideIndex) => {
+        slide.classList.toggle('is-active', slideIndex === index);
+        slide.classList.toggle('is-nearby', Math.abs(slideIndex - index) === 1);
+      });
+
+      dots.forEach((dot, dotIndex) => {
+        dot.classList.toggle('is-active', dotIndex === index);
+        dot.setAttribute('aria-pressed', dotIndex === index ? 'true' : 'false');
+      });
+
+      if (status) {
+        status.textContent = `${formatIndex(index)} / ${totalLabel}`;
       }
 
-      scene.classList.remove('carousel-flat');
-
-      const cardWidth = items[0].getBoundingClientRect().width;
-      if (!cardWidth) return;
-
-      const angle = (2 * Math.PI) / items.length;
-      const radius = Math.max(
-        cardWidth * 0.72,
-        (cardWidth / 2 + 8) / Math.tan(angle / 2)
-      );
-
-      track.style.setProperty('--carousel-radius', `${radius.toFixed(2)}px`);
+      if (prevBtn) prevBtn.disabled = slides.length < 2 || index === 0;
+      if (nextBtn) nextBtn.disabled = slides.length < 2 || index === slides.length - 1;
     };
 
-    applyGeometry();
+    const slideScrollLeft = slide => {
+      return slide.offsetLeft - ((viewport.clientWidth - slide.clientWidth) / 2);
+    };
 
-    if (scene.dataset.carouselGeometryBound === '1') return;
-    scene.dataset.carouselGeometryBound = '1';
+    const scrollToIndex = (index, behavior = 'smooth') => {
+      const normalized = Math.min(slides.length - 1, Math.max(0, index));
+      viewport.scrollTo({
+        left: slideScrollLeft(slides[normalized]),
+        behavior
+      });
+      setActive(normalized);
+    };
 
-    const scheduleGeometry = () => {
-      requestAnimationFrame(applyGeometry);
+    const findNearestIndex = () => {
+      const viewportCenter = viewport.scrollLeft + (viewport.clientWidth / 2);
+      let nearestIndex = 0;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+
+      slides.forEach((slide, index) => {
+        const slideCenter = slide.offsetLeft + (slide.clientWidth / 2);
+        const distance = Math.abs(slideCenter - viewportCenter);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestIndex = index;
+        }
+      });
+
+      return nearestIndex;
+    };
+
+    prevBtn?.addEventListener('click', () => {
+      scrollToIndex(activeIndex - 1);
+    });
+
+    nextBtn?.addEventListener('click', () => {
+      scrollToIndex(activeIndex + 1);
+    });
+
+    dots.forEach((dot, index) => {
+      dot.addEventListener('click', () => {
+        scrollToIndex(index);
+      });
+    });
+
+    viewport.addEventListener('scroll', () => {
+      if (scrollTimeoutId) clearTimeout(scrollTimeoutId);
+      scrollTimeoutId = setTimeout(() => {
+        setActive(findNearestIndex());
+      }, 80);
+    }, { passive: true });
+
+    const syncLayout = () => {
+      scrollToIndex(activeIndex, 'auto');
     };
 
     if (typeof ResizeObserver === 'function') {
-      const observer = new ResizeObserver(scheduleGeometry);
-      observer.observe(scene);
+      const observer = new ResizeObserver(() => requestAnimationFrame(syncLayout));
+      observer.observe(viewport);
     } else {
-      window.addEventListener('resize', scheduleGeometry);
+      window.addEventListener('resize', syncLayout);
     }
 
-    window.addEventListener('load', scheduleGeometry, { once: true });
-    requestAnimationFrame(() => requestAnimationFrame(applyGeometry));
-  });
-}
-
-function initCarouselMomentumControl() {
-  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  document.querySelectorAll('.gallery-scene').forEach(scene => {
-    if (scene.dataset.carouselControlBound === '1') return;
-    scene.dataset.carouselControlBound = '1';
-
-    const track = scene.querySelector('.gallery-a3d');
-    if (!track || typeof track.animate !== 'function') return;
-    if (scene.classList.contains('carousel-flat')) {
-      track.style.animation = 'none';
-      return;
-    }
-
-    track.style.animation = 'none';
-
-    const baseRate = prefersReducedMotion ? 0.25 : 1;
-    const spin = track.animate(
-      [{ transform: 'rotateY(0turn)' }, { transform: 'rotateY(1turn)' }],
-      { duration: 32000, iterations: Infinity, easing: 'linear' }
-    );
-    spin.playbackRate = baseRate;
-
-    let boost = 0;
-    let dragging = false;
-    let moved = false;
-    let pointerId = null;
-    let lastX = 0;
-    let lastTime = 0;
-    let rafId = null;
-
-    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-    const addBoost = impulse => {
-      boost = clamp(boost + impulse, -3.5, 3.5);
-    };
-
-    const tick = () => {
-      spin.playbackRate = clamp(baseRate + boost, -4, 4);
-      boost *= 0.93;
-
-      if (dragging || Math.abs(boost) > 0.01) {
-        rafId = requestAnimationFrame(tick);
-      } else {
-        spin.playbackRate = baseRate;
-        rafId = null;
-      }
-    };
-
-    const queueTick = () => {
-      if (!rafId) rafId = requestAnimationFrame(tick);
-    };
-
-    scene.addEventListener('wheel', e => {
-      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      if (!delta) return;
-
-      addBoost(-delta * 0.004);
-      queueTick();
-      e.preventDefault();
-    }, { passive: false });
-
-    scene.addEventListener('pointerdown', e => {
-      if (e.button !== 0 && e.pointerType !== 'touch') return;
-      if (e.target.closest('button, form, a, input, select, textarea')) return;
-
-      dragging = true;
-      moved = false;
-      pointerId = e.pointerId;
-      lastX = e.clientX;
-      lastTime = performance.now();
-      scene.style.cursor = 'grabbing';
-      scene.setPointerCapture(pointerId);
-    });
-
-    scene.addEventListener('pointermove', e => {
-      if (!dragging || e.pointerId !== pointerId) return;
-
-      const now = performance.now();
-      const dx = e.clientX - lastX;
-      const dt = Math.max(8, now - lastTime);
-
-      if (Math.abs(dx) > 2) moved = true;
-
-      const velocity = dx / dt;
-      addBoost((velocity * 0.55) + (dx * 0.0025));
-      queueTick();
-
-      lastX = e.clientX;
-      lastTime = now;
-      e.preventDefault();
-    });
-
-    const finishDrag = e => {
-      if (!dragging || e.pointerId !== pointerId) return;
-      dragging = false;
-      scene.style.cursor = '';
-
-      if (scene.hasPointerCapture(pointerId)) {
-        scene.releasePointerCapture(pointerId);
-      }
-
-      pointerId = null;
-      queueTick();
-    };
-
-    scene.addEventListener('pointerup', finishDrag);
-    scene.addEventListener('pointercancel', finishDrag);
-    scene.addEventListener('lostpointercapture', () => {
-      dragging = false;
-      pointerId = null;
-      scene.style.cursor = '';
-    });
-
-    scene.addEventListener('click', e => {
-      if (moved && e.target.closest('.gallery-item[data-url]')) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      moved = false;
-    }, true);
+    setActive(0);
+    requestAnimationFrame(() => scrollToIndex(0, 'auto'));
   });
 }
 
@@ -1251,8 +1319,7 @@ function initStarWarp() {
 function initInteractiveEffects() {
   initStarWarp();
   initHeroGradientHover();
-  initCarouselGeometry();
-  initCarouselMomentumControl();
+  initGalleryCarousel();
   bindGalleryLightbox();
   initTilt();
 }
