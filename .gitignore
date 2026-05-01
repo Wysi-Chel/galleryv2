@@ -5,3 +5,5 @@ __pycache__/
 flask.err.log
 flask.out.log
 gallery/
+
+.vercel
