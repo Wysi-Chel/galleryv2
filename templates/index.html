@@ -111,10 +111,10 @@
     .gallery-shell { max-width: 1200px; margin: 0 auto; }
     .gallery-tools {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
+      align-items: flex-end;
+      justify-content: flex-start;
       gap: 1rem;
-      margin: -1.2rem 0 1.5rem;
+      margin: -1.2rem 0 1.35rem;
       flex-wrap: wrap;
     }
     .gallery-intro {
@@ -128,151 +128,125 @@
       text-transform: uppercase;
       color: var(--text-muted);
     }
-    .gallery-toggle-btn {
-      background: var(--accent-soft);
-      border: 1px solid rgba(78,205,196,0.25);
-      color: var(--accent);
-      font-size: 0.64rem;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      padding: 0.42rem 0.9rem;
-      cursor: pointer;
-      transition: background 0.2s, border-color 0.2s;
-      font-family: 'Inter', sans-serif;
-      font-weight: 300;
+    .gallery-count {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.15rem;
+      font-style: italic;
+      color: rgba(223,245,239,0.82);
     }
-    .gallery-toggle-btn:hover {
-      background: rgba(78,205,196,0.15);
-      border-color: var(--accent);
-    }
-    .gallery-carousel {
+    .gallery-wall-shell {
       position: relative;
-      --slide-size: min(72vw, 31rem);
+      padding: 0.75rem 0 0.25rem;
     }
-    .gallery-carousel::before {
+    .gallery-wall-shell::before {
       content: '';
       position: absolute;
-      inset: 2rem 0 4rem;
+      inset: 1rem -2rem auto;
+      height: 18rem;
       background:
-        radial-gradient(circle at center, rgba(78,205,196,0.12) 0%, rgba(58,134,184,0.08) 35%, transparent 72%),
-        linear-gradient(180deg, rgba(17,32,32,0.25), rgba(8,15,15,0));
+        radial-gradient(circle at 20% 35%, rgba(78,205,196,0.10) 0%, transparent 36%),
+        radial-gradient(circle at 80% 0%, rgba(58,134,184,0.10) 0%, transparent 38%);
       pointer-events: none;
-      filter: blur(8px);
+      filter: blur(12px);
     }
-    .gallery-carousel-viewport {
-      overflow-x: auto;
-      overflow-y: hidden;
-      scroll-snap-type: x mandatory;
-      scroll-padding-inline: calc((100% - var(--slide-size)) / 2);
-      padding-inline: calc(max(1rem, (100% - var(--slide-size)) / 2));
-      scrollbar-width: none;
-      -ms-overflow-style: none;
-      overscroll-behavior-x: contain;
-      touch-action: pan-x pinch-zoom;
+    .gallery-wall {
       position: relative;
       z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 1.4rem;
+      align-items: start;
     }
-    .gallery-carousel-viewport::-webkit-scrollbar { display: none; }
-    .gallery-carousel-track {
-      display: flex;
-      align-items: stretch;
-      gap: 1.25rem;
-      width: max-content;
-      padding: 0.85rem 0 1.3rem;
-    }
-    .gallery-slide {
-      flex: 0 0 var(--slide-size);
-      width: var(--slide-size);
-      scroll-snap-align: center;
-      transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease, filter 0.35s ease;
-      opacity: 0.5;
-      transform: translateY(1.1rem) scale(0.92);
-      filter: saturate(0.8);
+    .gallery-polaroid {
+      position: relative;
+      padding: 0.9rem 0.9rem 1.15rem;
+      background: linear-gradient(180deg, #f6f0e4, #eadfcd);
+      border: 1px solid rgba(88,68,42,0.14);
+      box-shadow:
+        0 20px 38px rgba(0,0,0,0.28),
+        0 4px 10px rgba(0,0,0,0.12);
+      transform: translateY(var(--stack-shift, 0rem)) rotate(var(--tilt, 0deg));
+      transform-origin: center center;
+      transition: transform 0.24s ease, box-shadow 0.24s ease;
       cursor: pointer;
     }
-    .gallery-slide.is-nearby {
-      opacity: 0.78;
-      transform: translateY(0.45rem) scale(0.96);
-      filter: saturate(0.92);
-    }
-    .gallery-slide.is-active {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-      filter: saturate(1);
-    }
-    .gallery-slide-card {
-      position: relative;
-      height: clamp(24rem, 70vh, 36rem);
-      border-radius: 1.6rem;
-      overflow: hidden;
-      background:
-        linear-gradient(160deg, rgba(17,32,32,0.96), rgba(8,15,15,0.98));
-      border: 1px solid rgba(78,205,196,0.16);
+    .gallery-polaroid:hover {
+      transform: translateY(calc(var(--stack-shift, 0rem) - 0.45rem)) rotate(var(--tilt, 0deg)) scale(1.015);
       box-shadow:
-        0 30px 70px rgba(0,0,0,0.38),
-        inset 0 1px 0 rgba(255,255,255,0.04);
+        0 28px 44px rgba(0,0,0,0.34),
+        0 8px 18px rgba(0,0,0,0.14);
     }
-    .gallery-slide-media {
+    .gallery-polaroid::before,
+    .gallery-polaroid::after {
+      content: '';
+      position: absolute;
+      top: -0.52rem;
+      width: 4rem;
+      height: 1.15rem;
+      background: rgba(255,248,228,0.52);
+      border: 1px solid rgba(160,145,118,0.18);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+      transform: rotate(var(--tape-tilt, -7deg));
+      pointer-events: none;
+    }
+    .gallery-polaroid::before {
+      left: 1rem;
+    }
+    .gallery-polaroid::after {
+      right: 1rem;
+      --tape-tilt: 8deg;
+    }
+    .gallery-polaroid-media {
       position: relative;
-      width: 100%;
-      height: 100%;
+      aspect-ratio: 4 / 5;
+      overflow: hidden;
+      background: rgba(210, 201, 189, 0.7);
+      border: 1px solid rgba(101,84,58,0.10);
     }
-    .gallery-slide img,
+    .gallery-polaroid:nth-child(5n + 2) .gallery-polaroid-media,
+    .gallery-polaroid:nth-child(7n + 5) .gallery-polaroid-media {
+      aspect-ratio: 1 / 1;
+    }
+    .gallery-polaroid:nth-child(6n + 3) .gallery-polaroid-media {
+      aspect-ratio: 3 / 4;
+    }
+    .gallery-polaroid img,
     .gallery-collage-item img {
       width: 100%;
       height: 100%;
       object-fit: cover;
       display: block;
-      transition: transform 0.8s cubic-bezier(0.22,1,0.36,1), filter 0.45s ease;
-      filter: brightness(0.82) saturate(0.88);
+      transition: transform 0.55s cubic-bezier(0.22,1,0.36,1), filter 0.35s ease;
+      filter: sepia(0.04) saturate(0.94) contrast(0.98);
     }
-    .gallery-slide.is-active img {
-      filter: brightness(0.98) saturate(1.02);
-      transform: scale(1.015);
-    }
-    .gallery-slide:hover img,
+    .gallery-polaroid:hover img,
     .gallery-collage-item:hover img { transform: scale(1.04); filter: brightness(1) saturate(1.05); }
-    .gallery-slide-media::after {
-      content: '';
-      position: absolute;
-      inset: auto 0 0;
-      height: 52%;
-      background: linear-gradient(to top, rgba(6,12,12,0.92), rgba(6,12,12,0.08) 62%, transparent);
-      pointer-events: none;
-    }
-    .gallery-slide-copy {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 2;
-      padding: 1.35rem 1.35rem 1.2rem;
+    .gallery-polaroid-copy {
+      padding-top: 0.95rem;
       display: flex;
       flex-direction: column;
       gap: 0.45rem;
-      align-items: flex-start;
     }
-    .gallery-slide-index {
+    .gallery-polaroid-index {
       font-size: 0.62rem;
-      letter-spacing: 0.3em;
+      letter-spacing: 0.24em;
       text-transform: uppercase;
-      color: var(--accent);
+      color: #8f6a44;
     }
-    .gallery-slide-title {
+    .gallery-polaroid-title {
       font-family: 'Cormorant Garamond', serif;
-      font-size: clamp(1.45rem, 3vw, 2.2rem);
-      line-height: 1.05;
-      color: #f6fffb;
-      text-shadow: 0 10px 30px rgba(0,0,0,0.4);
-      max-width: 85%;
+      font-size: clamp(1.1rem, 2vw, 1.45rem);
+      line-height: 1.18;
+      color: #3d2a1f;
+      min-height: 2.6em;
     }
-    .gallery-slide-subtitle {
-      font-size: 0.76rem;
-      letter-spacing: 0.14em;
+    .gallery-polaroid-subtitle {
+      font-size: 0.67rem;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
-      color: rgba(223,245,239,0.62);
+      color: rgba(61,42,31,0.54);
     }
-    .gallery-slide .caption-overlay,
+    .gallery-polaroid .caption-overlay,
     .gallery-collage-item .caption-overlay {
       position: absolute;
       bottom: 0;
@@ -288,9 +262,9 @@
       transform: translateY(6px);
       transition: opacity 0.28s, transform 0.28s;
     }
-    .gallery-slide:hover .caption-overlay,
+    .gallery-polaroid:hover .caption-overlay,
     .gallery-collage-item:hover .caption-overlay { opacity: 1; transform: translateY(0); }
-    .gallery-slide .delete-btn,
+    .gallery-polaroid .delete-btn,
     .gallery-collage-item .delete-btn {
       position: absolute;
       top: 0.6rem;
@@ -307,83 +281,10 @@
       transition: opacity 0.25s, color 0.2s;
       font-family: 'Inter', sans-serif;
     }
-    .gallery-slide:hover .delete-btn,
+    .gallery-polaroid:hover .delete-btn,
     .gallery-collage-item:hover .delete-btn { opacity: 1; }
-    .gallery-slide .delete-btn:hover,
+    .gallery-polaroid .delete-btn:hover,
     .gallery-collage-item .delete-btn:hover { color: #ff6b6b; }
-    .gallery-carousel-nav {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 clamp(0.25rem, 2vw, 0.8rem);
-      pointer-events: none;
-      z-index: 2;
-    }
-    .gallery-carousel-btn {
-      pointer-events: auto;
-      width: 3rem;
-      height: 3rem;
-      border-radius: 999px;
-      border: 1px solid rgba(78,205,196,0.2);
-      background: rgba(8,15,15,0.76);
-      color: var(--text-primary);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      backdrop-filter: blur(18px);
-      box-shadow: 0 14px 28px rgba(0,0,0,0.24);
-      transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
-    }
-    .gallery-carousel-btn:hover {
-      transform: scale(1.05);
-      background: rgba(17,32,32,0.9);
-      border-color: rgba(78,205,196,0.38);
-    }
-    .gallery-carousel-btn[disabled] {
-      opacity: 0.4;
-      cursor: default;
-      transform: none;
-    }
-    .gallery-carousel-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      margin-top: 0.6rem;
-      position: relative;
-      z-index: 1;
-    }
-    .gallery-carousel-status {
-      font-size: 0.66rem;
-      letter-spacing: 0.28em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
-    .gallery-carousel-dots {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-    .gallery-carousel-dot {
-      width: 0.62rem;
-      height: 0.62rem;
-      border-radius: 999px;
-      border: 1px solid rgba(78,205,196,0.22);
-      background: transparent;
-      cursor: pointer;
-      transition: width 0.25s ease, background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
-    }
-    .gallery-carousel-dot.is-active {
-      width: 1.9rem;
-      background: linear-gradient(135deg, var(--accent-3), var(--blue));
-      border-color: transparent;
-      transform: translateY(-1px);
-    }
     .gallery-empty {
       padding: 5rem 2rem;
       text-align: center;
@@ -541,14 +442,11 @@
       .featured-grid { grid-template-columns: 1fr; }
       .photo-slot:first-child { grid-row: span 1; min-height: 300px; }
       .gallery-tools { margin: -1rem 0 1rem; align-items: flex-start; }
-      .gallery-carousel { --slide-size: min(84vw, 22rem); }
-      .gallery-carousel-track { gap: 0.85rem; padding-block: 0.5rem 1rem; }
-      .gallery-slide { transform: translateY(0.7rem) scale(0.94); }
-      .gallery-slide-card { height: 26rem; border-radius: 1.3rem; }
-      .gallery-slide-title { max-width: 100%; font-size: clamp(1.3rem, 7vw, 1.85rem); }
-      .gallery-carousel-nav { display: none; }
-      .gallery-carousel-footer { flex-direction: column; align-items: flex-start; }
-      .gallery-carousel-dots { justify-content: flex-start; }
+      .gallery-wall { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+      .gallery-polaroid { padding: 0.7rem 0.7rem 0.95rem; }
+      .gallery-polaroid::before,
+      .gallery-polaroid::after { width: 2.8rem; height: 0.9rem; top: -0.45rem; }
+      .gallery-polaroid-title { min-height: 0; font-size: 1.05rem; }
       .gallery-collage-modal { width: 94vw; max-height: 90vh; padding: 1rem; }
       .gallery-collage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .gallery-collage-item:nth-child(7n + 1),
@@ -711,54 +609,33 @@
     <p class="section-label">Gallery</p>
     <h2 class="section-title">Every <em>little</em> moment</h2>
     {% if gallery %}
-      {% set carousel_photos = gallery %}
       <div class="gallery-tools">
         <div class="gallery-intro">
-          <p class="gallery-note">A softer way to browse the moments we keep close.</p>
+          <p class="gallery-note">A wall of keepsakes, pinned up all at once.</p>
+          <p class="gallery-count">{{ gallery|length }} photo{% if gallery|length != 1 %}s{% endif %} on the wall</p>
         </div>
-        {% if gallery|length >= 3 %}
-          <button type="button" class="gallery-toggle-btn" onclick="openGalleryCollage()">See full collage</button>
-        {% endif %}
       </div>
-      <div class="gallery-carousel" data-carousel>
-        <div class="gallery-carousel-viewport" data-carousel-viewport>
-          <div class="gallery-carousel-track">
-            {% for photo in carousel_photos %}
-              <article class="gallery-slide{% if loop.first %} is-active{% endif %}"
-                data-carousel-slide
-                data-url="{{ photo.url }}"
-                data-caption="{{ photo.caption or '' }}">
-                <div class="gallery-slide-card tilt">
-                  <div class="gallery-slide-media">
-                    <img src="{{ photo.url }}" alt="{{ photo.caption }}" loading="eager" decoding="async"/>
-                    <div class="gallery-slide-copy">
-                      <p class="gallery-slide-index">Moment {{ loop.index }}</p>
-                      <p class="gallery-slide-title">{{ photo.caption or 'A favorite frame worth keeping close.' }}</p>
-                      <p class="gallery-slide-subtitle">Tap to open the full photo</p>
-                    </div>
-                    <form method="POST" action="/delete/{{ photo.id }}" onclick="event.stopPropagation()" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
-                      <button type="submit" class="delete-btn">Delete</button>
-                    </form>
-                  </div>
-                </div>
-              </article>
-            {% endfor %}
-          </div>
+      <div class="gallery-wall-shell">
+        <div class="gallery-wall">
+          {% for photo in gallery %}
+            <article class="gallery-polaroid tilt"
+              style="--tilt: {{ loop.cycle('-2.8deg', '1.9deg', '-1.3deg', '2.6deg', '-0.8deg', '1.2deg') }}; --stack-shift: {{ loop.cycle('0rem', '1rem', '0.35rem', '1.4rem', '0.2rem', '0.85rem') }};"
+              data-url="{{ photo.url }}"
+              data-caption="{{ photo.caption or '' }}">
+              <div class="gallery-polaroid-media">
+                <img src="{{ photo.url }}" alt="{{ photo.caption }}" loading="lazy"/>
+              </div>
+              <div class="gallery-polaroid-copy">
+                <p class="gallery-polaroid-index">Moment {{ loop.index }}</p>
+                <p class="gallery-polaroid-title">{{ photo.caption or 'A favorite frame worth keeping close.' }}</p>
+                <p class="gallery-polaroid-subtitle">Tap to open full photo</p>
+              </div>
+              <form method="POST" action="/delete/{{ photo.id }}" onclick="event.stopPropagation()" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
+                <button type="submit" class="delete-btn">Delete</button>
+              </form>
+            </article>
+          {% endfor %}
         </div>
-        {% if carousel_photos|length > 1 %}
-          <div class="gallery-carousel-nav" aria-hidden="true">
-            <button type="button" class="gallery-carousel-btn" data-carousel-prev aria-label="Previous photo">&#10094;</button>
-            <button type="button" class="gallery-carousel-btn" data-carousel-next aria-label="Next photo">&#10095;</button>
-          </div>
-          <div class="gallery-carousel-footer">
-            <p class="gallery-carousel-status" data-carousel-status>1 / {{ carousel_photos|length }}</p>
-            <div class="gallery-carousel-dots">
-              {% for photo in carousel_photos %}
-                <button type="button" class="gallery-carousel-dot{% if loop.first %} is-active{% endif %}" data-carousel-dot="{{ loop.index0 }}" aria-label="Go to photo {{ loop.index }}"></button>
-              {% endfor %}
-            </div>
-          </div>
-        {% endif %}
       </div>
     {% else %}
       <div class="gallery-empty" onclick="openModal()">
@@ -768,30 +645,6 @@
     {% endif %}
   </div>
 </section>
-
-{% if gallery and gallery|length >= 3 %}
-<div class="gallery-collage-overlay" id="galleryCollageModal" onclick="closeGalleryCollageOutside(event)">
-  <div class="gallery-collage-modal" role="dialog" aria-modal="true" aria-label="All gallery photos">
-    <div class="gallery-collage-head">
-      <h3>All Photos</h3>
-      <button type="button" class="gallery-collage-close" onclick="closeGalleryCollage()">&times;</button>
-    </div>
-    <div class="gallery-collage-grid">
-      {% for photo in gallery %}
-        <article class="gallery-collage-item"
-          data-url="{{ photo.url }}"
-          data-caption="{{ photo.caption or '' }}">
-          <img src="{{ photo.url }}" alt="{{ photo.caption }}" loading="lazy"/>
-          {% if photo.caption %}<div class="caption-overlay">{{ photo.caption }}</div>{% endif %}
-          <form method="POST" action="/delete/{{ photo.id }}" onclick="event.stopPropagation()" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
-            <button type="submit" class="delete-btn">Delete</button>
-          </form>
-        </article>
-      {% endfor %}
-    </div>
-  </div>
-</div>
-{% endif %}
 
 <!-- TIMELINE -->
 <section id="moments">
@@ -996,7 +849,7 @@
   }, 3500);
   // ── TILT FX ──
 function bindGalleryLightbox() {
-  document.querySelectorAll('.gallery-slide[data-url], .gallery-collage-item[data-url]').forEach(el => {
+  document.querySelectorAll('.gallery-polaroid[data-url]').forEach(el => {
     if (el.dataset.lightboxBound === '1') return;
     el.dataset.lightboxBound = '1';
 
@@ -1111,114 +964,6 @@ function initHeroGradientHover() {
   });
 }
 
-function initGalleryCarousel() {
-  document.querySelectorAll('[data-carousel]').forEach(carousel => {
-    if (carousel.dataset.carouselBound === '1') return;
-    carousel.dataset.carouselBound = '1';
-
-    const viewport = carousel.querySelector('[data-carousel-viewport]');
-    const slides = Array.from(carousel.querySelectorAll('[data-carousel-slide]'));
-    const prevBtn = carousel.querySelector('[data-carousel-prev]');
-    const nextBtn = carousel.querySelector('[data-carousel-next]');
-    const status = carousel.querySelector('[data-carousel-status]');
-    const dots = Array.from(carousel.querySelectorAll('[data-carousel-dot]'));
-
-    if (!viewport || !slides.length) return;
-
-    let activeIndex = 0;
-    let scrollTimeoutId = null;
-
-    const formatIndex = value => String(value + 1).padStart(2, '0');
-    const totalLabel = String(slides.length).padStart(2, '0');
-
-    const setActive = index => {
-      activeIndex = index;
-
-      slides.forEach((slide, slideIndex) => {
-        slide.classList.toggle('is-active', slideIndex === index);
-        slide.classList.toggle('is-nearby', Math.abs(slideIndex - index) === 1);
-      });
-
-      dots.forEach((dot, dotIndex) => {
-        dot.classList.toggle('is-active', dotIndex === index);
-        dot.setAttribute('aria-pressed', dotIndex === index ? 'true' : 'false');
-      });
-
-      if (status) {
-        status.textContent = `${formatIndex(index)} / ${totalLabel}`;
-      }
-
-      if (prevBtn) prevBtn.disabled = slides.length < 2 || index === 0;
-      if (nextBtn) nextBtn.disabled = slides.length < 2 || index === slides.length - 1;
-    };
-
-    const slideScrollLeft = slide => {
-      return slide.offsetLeft - ((viewport.clientWidth - slide.clientWidth) / 2);
-    };
-
-    const scrollToIndex = (index, behavior = 'smooth') => {
-      const normalized = Math.min(slides.length - 1, Math.max(0, index));
-      viewport.scrollTo({
-        left: slideScrollLeft(slides[normalized]),
-        behavior
-      });
-      setActive(normalized);
-    };
-
-    const findNearestIndex = () => {
-      const viewportCenter = viewport.scrollLeft + (viewport.clientWidth / 2);
-      let nearestIndex = 0;
-      let nearestDistance = Number.POSITIVE_INFINITY;
-
-      slides.forEach((slide, index) => {
-        const slideCenter = slide.offsetLeft + (slide.clientWidth / 2);
-        const distance = Math.abs(slideCenter - viewportCenter);
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearestIndex = index;
-        }
-      });
-
-      return nearestIndex;
-    };
-
-    prevBtn?.addEventListener('click', () => {
-      scrollToIndex(activeIndex - 1);
-    });
-
-    nextBtn?.addEventListener('click', () => {
-      scrollToIndex(activeIndex + 1);
-    });
-
-    dots.forEach((dot, index) => {
-      dot.addEventListener('click', () => {
-        scrollToIndex(index);
-      });
-    });
-
-    viewport.addEventListener('scroll', () => {
-      if (scrollTimeoutId) clearTimeout(scrollTimeoutId);
-      scrollTimeoutId = setTimeout(() => {
-        setActive(findNearestIndex());
-      }, 80);
-    }, { passive: true });
-
-    const syncLayout = () => {
-      scrollToIndex(activeIndex, 'auto');
-    };
-
-    if (typeof ResizeObserver === 'function') {
-      const observer = new ResizeObserver(() => requestAnimationFrame(syncLayout));
-      observer.observe(viewport);
-    } else {
-      window.addEventListener('resize', syncLayout);
-    }
-
-    setActive(0);
-    requestAnimationFrame(() => scrollToIndex(0, 'auto'));
-  });
-}
-
 function initStarWarp() {
   const container = document.getElementById('star-container');
   if (!container) return;
@@ -1319,7 +1064,6 @@ function initStarWarp() {
 function initInteractiveEffects() {
   initStarWarp();
   initHeroGradientHover();
-  initGalleryCarousel();
   bindGalleryLightbox();
   initTilt();
 }
