@@ -134,6 +134,7 @@
     .gallery-scene, .gallery-a3d { display: grid; }
     .gallery-scene {
       position: relative;
+      place-items: center;
       overflow: hidden;
       min-height: clamp(26rem, 58vw, 36rem);
       perspective: 42em;
@@ -145,14 +146,18 @@
       touch-action: pan-y;
     }
     .gallery-a3d {
+      --carousel-radius: 0px;
       place-self: center;
+      place-items: center;
+      width: 100%;
+      min-height: inherit;
       transform-style: preserve-3d;
       animation: carouselSpin 32s linear infinite;
+      will-change: transform;
     }
-    @keyframes carouselSpin { to { rotate: y 1turn; } }
+    @keyframes carouselSpin { to { transform: rotateY(1turn); } }
     .gallery-item {
       --card-w: clamp(10.5rem, 20vw, 17.5rem);
-      --ba: calc(1turn / var(--n));
       grid-area: 1 / 1;
       width: var(--card-w);
       aspect-ratio: 7 / 10;
@@ -162,7 +167,8 @@
       border: 1px solid rgba(255,255,255,0.08);
       backface-visibility: hidden;
       cursor: pointer;
-      transform: rotateY(calc(var(--i) * var(--ba))) translateZ(calc((.5 * var(--card-w) + .5rem) / tan(.5 * var(--ba))));
+      transform: rotateY(calc(var(--i) * 1turn / var(--n))) translateZ(var(--carousel-radius));
+      transform-origin: center center;
       box-shadow: 0 16px 45px rgba(0,0,0,0.35);
     }
     .gallery-item img,
@@ -315,6 +321,29 @@
       min-height: 320px;
     }
     .gallery-collage-item:nth-child(7n + 6) { aspect-ratio: 1 / 1; }
+    .gallery-scene.carousel-flat {
+      display: block;
+      perspective: none;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 0.75rem;
+      scrollbar-width: thin;
+    }
+    .gallery-scene.carousel-flat .gallery-a3d {
+      display: flex;
+      align-items: stretch;
+      gap: 1rem;
+      width: max-content;
+      min-height: auto;
+      animation: none;
+      transform: none !important;
+      transform-style: flat;
+    }
+    .gallery-scene.carousel-flat .gallery-item {
+      flex: 0 0 min(78vw, 18rem);
+      width: min(78vw, 18rem);
+      transform: none !important;
+    }
     @media (prefers-reduced-motion: reduce) {
       .gallery-a3d { animation-duration: 128s; }
     }
@@ -942,6 +971,63 @@ function initHeroGradientHover() {
   });
 }
 
+function initCarouselGeometry() {
+  const supports3d = typeof CSS !== 'undefined'
+    && CSS.supports('transform-style', 'preserve-3d')
+    && CSS.supports('transform', 'rotateY(1turn)');
+
+  document.querySelectorAll('.gallery-scene').forEach(scene => {
+    const track = scene.querySelector('.gallery-a3d');
+    const items = track ? Array.from(track.querySelectorAll('.gallery-item')) : [];
+    if (!track || !items.length) return;
+
+    items.forEach((item, index) => {
+      item.style.setProperty('--i', String(index));
+    });
+    track.style.setProperty('--n', String(items.length));
+
+    const applyGeometry = () => {
+      if (!supports3d || items.length < 3) {
+        scene.classList.add('carousel-flat');
+        track.style.setProperty('--carousel-radius', '0px');
+        return;
+      }
+
+      scene.classList.remove('carousel-flat');
+
+      const cardWidth = items[0].getBoundingClientRect().width;
+      if (!cardWidth) return;
+
+      const angle = (2 * Math.PI) / items.length;
+      const radius = Math.max(
+        cardWidth * 0.72,
+        (cardWidth / 2 + 8) / Math.tan(angle / 2)
+      );
+
+      track.style.setProperty('--carousel-radius', `${radius.toFixed(2)}px`);
+    };
+
+    applyGeometry();
+
+    if (scene.dataset.carouselGeometryBound === '1') return;
+    scene.dataset.carouselGeometryBound = '1';
+
+    const scheduleGeometry = () => {
+      requestAnimationFrame(applyGeometry);
+    };
+
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(scheduleGeometry);
+      observer.observe(scene);
+    } else {
+      window.addEventListener('resize', scheduleGeometry);
+    }
+
+    window.addEventListener('load', scheduleGeometry, { once: true });
+    requestAnimationFrame(() => requestAnimationFrame(applyGeometry));
+  });
+}
+
 function initCarouselMomentumControl() {
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -951,6 +1037,10 @@ function initCarouselMomentumControl() {
 
     const track = scene.querySelector('.gallery-a3d');
     if (!track || typeof track.animate !== 'function') return;
+    if (scene.classList.contains('carousel-flat')) {
+      track.style.animation = 'none';
+      return;
+    }
 
     track.style.animation = 'none';
 
@@ -1161,6 +1251,7 @@ function initStarWarp() {
 function initInteractiveEffects() {
   initStarWarp();
   initHeroGradientHover();
+  initCarouselGeometry();
   initCarouselMomentumControl();
   bindGalleryLightbox();
   initTilt();
