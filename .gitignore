@@ -1,0 +1,7 @@
+serviceAccountKey.json
+cloudinary.txt
+.venv/
+__pycache__/
+flask.err.log
+flask.out.log
+gallery/

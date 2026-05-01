@@ -1,0 +1,4 @@
+flask
+werkzeug
+firebase-admin
+cloudinary
