@@ -711,7 +711,7 @@
     <p class="section-label">Gallery</p>
     <h2 class="section-title">Every <em>little</em> moment</h2>
     {% if gallery %}
-      {% set carousel_photos = gallery[:8] %}
+      {% set carousel_photos = gallery %}
       <div class="gallery-tools">
         <div class="gallery-intro">
           <p class="gallery-note">A softer way to browse the moments we keep close.</p>
@@ -730,7 +730,7 @@
                 data-caption="{{ photo.caption or '' }}">
                 <div class="gallery-slide-card tilt">
                   <div class="gallery-slide-media">
-                    <img src="{{ photo.url }}" alt="{{ photo.caption }}" loading="lazy"/>
+                    <img src="{{ photo.url }}" alt="{{ photo.caption }}" loading="eager" decoding="async"/>
                     <div class="gallery-slide-copy">
                       <p class="gallery-slide-index">Moment {{ loop.index }}</p>
                       <p class="gallery-slide-title">{{ photo.caption or 'A favorite frame worth keeping close.' }}</p>
