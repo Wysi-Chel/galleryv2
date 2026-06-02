@@ -1,3 +1,4 @@
+{%- set memory_photos = (featured or []) + (gallery or []) -%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -30,7 +31,7 @@
     #star-container { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
     .star { position: absolute; background: #fff; border-radius: 50%; opacity: 0.8; animation: twinkle var(--duration, 3s) infinite ease-in-out; will-change: transform, opacity, top; }
     @keyframes twinkle { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.2); } }
-    body > *:not(#star-container):not(.modal-overlay):not(.gallery-collage-overlay):not(.lightbox) { position: relative; z-index: 1; }
+    body > *:not(#star-container):not(.modal-overlay):not(.gallery-collage-overlay):not(.scrapbook-overlay):not(.lightbox) { position: relative; z-index: 1; }
 
     /* HERO */
     .hero { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; position: relative; border-bottom: 1px solid var(--border); overflow: hidden; --hero-mouse-x: 50%; --hero-mouse-y: 50%; }
@@ -86,25 +87,6 @@
     .drop-zone .file-chosen { margin-top: 0.6rem; font-size: 0.72rem; color: var(--accent); }
     .btn-submit { width: 100%; padding: 0.85rem; background: linear-gradient(135deg, var(--accent-2), var(--blue)); border: none; color: var(--bg); font-family: 'Inter', sans-serif; font-size: 0.72rem; font-weight: 400; letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer; margin-top: 1.5rem; transition: opacity 0.2s, transform 0.15s; }
     .btn-submit:hover { opacity: 0.88; transform: translateY(-1px); }
-
-    /* FEATURED */
-    .featured-wrap { max-width: 1200px; margin: 0 auto; }
-    .featured-grid { display: grid; grid-template-columns: 1.4fr 1fr; grid-template-rows: auto auto; gap: 1px; background: var(--border-soft); border: 1px solid var(--border); }
-    .photo-slot { background: var(--surface); overflow: hidden; position: relative; }
-    .photo-slot:first-child { grid-row: span 2; min-height: 560px; }
-    .photo-slot:not(:first-child) { min-height: 275px; }
-    .photo-slot img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.6s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.4s; filter: brightness(0.88) saturate(0.9); }
-    .photo-slot:hover img { transform: scale(1.04); filter: brightness(1) saturate(1.05); }
-    .photo-slot .delete-btn { position: absolute; top: 0.6rem; right: 0.6rem; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.55); font-size: 0.65rem; padding: 0.3rem 0.6rem; cursor: pointer; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0; transition: opacity 0.25s, color 0.2s; font-family: 'Inter', sans-serif; }
-    .photo-slot:hover .delete-btn { opacity: 1; }
-    .photo-slot .delete-btn:hover { color: #ff6b6b; }
-    .featured-replace-form { position: absolute; top: 0.6rem; right: 0.6rem; z-index: 2; }
-    .featured-replace-form .replace-btn { opacity: 1; position: static; color: rgba(255,255,255,0.75); }
-    .featured-replace-form .replace-btn:hover { color: var(--accent-3); }
-    .replace-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-    .photo-placeholder { width: 100%; height: 100%; min-height: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; color: var(--text-muted); font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; border: 1.5px dashed rgba(78,205,196,0.10); transition: border-color 0.3s, background 0.3s; cursor: pointer; }
-    .photo-placeholder:hover { border-color: var(--accent); background: var(--accent-soft); }
-    .photo-placeholder svg { width: 26px; height: 26px; opacity: 0.25; }
 
     /* GALLERY */
     .gallery-section { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
@@ -605,51 +587,407 @@
     blockquote p { font-family: 'Cormorant Garamond', serif; font-size: clamp(1.4rem, 3.5vw, 2.2rem); font-style: italic; font-weight: 300; line-height: 1.55; color: var(--text-primary); }
     blockquote cite { display: block; margin-top: 1.5rem; font-size: 0.67rem; letter-spacing: 0.28em; color: var(--accent); text-transform: uppercase; font-style: normal; }
 
-    /* TIMELINE */
-    .timeline-section { max-width: 700px; margin: 0 auto; }
-    .timeline { display: flex; flex-direction: column; padding-left: 2rem; position: relative; }
-    .timeline::before { content: ''; position: absolute; left: 0; top: 0.5rem; bottom: 0.5rem; width: 1px; background: linear-gradient(to bottom, transparent, var(--accent), var(--blue), transparent); }
-    .timeline-item { padding: 1.5rem 0 1.5rem 1.5rem; position: relative; border-bottom: 1px solid var(--border); }
-    .timeline-item:last-child { border-bottom: none; }
-    .timeline-item::before { content: ''; position: absolute; left: -0.25rem; top: 2rem; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
-    .timeline-item.core-memory { background: linear-gradient(90deg, rgba(78,205,196,0.10), rgba(58,134,184,0.03)); border-left: 2px solid var(--accent); padding-left: 1.1rem; margin-left: -1.1rem; }
-    .timeline-item.core-memory .timeline-date { color: var(--accent-3); font-weight: 400; }
-    .timeline-item.core-memory .timeline-event { color: #eefcf7; }
-    .timeline-date { font-size: 0.63rem; letter-spacing: 0.25em; color: var(--accent); text-transform: uppercase; margin-bottom: 0.4rem; }
-    .timeline-event { font-family: 'Cormorant Garamond', serif; font-size: 1.25rem; font-weight: 300; color: var(--text-primary); }
-    .timeline-note { margin-top: 0.3rem; font-size: 0.77rem; color: var(--text-muted); line-height: 1.6; }
-    .core-memory-card {
-      margin-top: 1.5rem;
-      padding: 1.15rem 1.2rem;
-      border: 1px solid var(--border);
-      border-left: 2px solid var(--accent-3);
-      background: linear-gradient(120deg, rgba(78,205,196,0.10), rgba(58,134,184,0.04));
+    /* STORY */
+    .timeline-section {
+      max-width: 980px;
+      margin: 0 auto;
+      position: relative;
     }
-    .core-memory-card .label {
-      font-size: 0.63rem;
-      letter-spacing: 0.25em;
-      text-transform: uppercase;
-      color: var(--accent-3);
-      margin-bottom: 0.5rem;
+    .timeline-section::before,
+    .timeline-section::after {
+      content: '';
+      position: absolute;
+      border: 1px solid rgba(255,225,210,0.16);
+      background: rgba(255,232,210,0.05);
+      pointer-events: none;
+      transform: rotate(-7deg);
     }
-    .core-memory-card .event {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 1.35rem;
-      font-weight: 300;
-      color: #eefcf7;
+    .timeline-section::before {
+      right: 1rem;
+      top: 1rem;
+      width: 4.8rem;
+      height: 1.35rem;
     }
-    .core-memory-card .date {
-      margin-top: 0.4rem;
-      font-size: 0.77rem;
+    .timeline-section::after {
+      left: -1rem;
+      bottom: 0.5rem;
+      width: 5.6rem;
+      height: 1.25rem;
+      transform: rotate(8deg);
+    }
+    .story-intro {
+      max-width: 720px;
+      margin: -1.8rem 0 2rem;
       color: var(--text-muted);
+      font-size: 0.88rem;
+      line-height: 1.8;
     }
-    .timeline-debug {
-      margin-top: 1rem;
-      font-size: 0.6rem;
-      letter-spacing: 0.12em;
-      color: rgba(200,240,230,0.42);
+    .story-actions {
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      margin: -0.6rem 0 2rem;
+    }
+    .scrapbook-trigger,
+    .scrapbook-upload-btn,
+    .scrapbook-close,
+    .scrapbook-page-open {
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+    }
+    .scrapbook-trigger,
+    .scrapbook-upload-btn {
+      border: 1px solid rgba(255,210,188,0.36);
+      background: linear-gradient(135deg, rgba(255,238,210,0.16), rgba(255,182,193,0.14));
+      color: #ffe8d4;
+      padding: 0.72rem 1rem;
+      font-size: 0.68rem;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
-      word-break: break-word;
+      transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+    }
+    .scrapbook-trigger:hover,
+    .scrapbook-upload-btn:hover {
+      transform: translateY(-2px) rotate(-1deg);
+      border-color: rgba(255,210,188,0.68);
+      background: linear-gradient(135deg, rgba(255,238,210,0.22), rgba(255,182,193,0.20));
+    }
+    .story-chapters {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.1rem;
+      position: relative;
+      padding: 0.2rem;
+    }
+    .story-chapters::before {
+      content: '';
+      position: absolute;
+      inset: 4rem -1rem auto auto;
+      width: 17rem;
+      height: 17rem;
+      background: radial-gradient(circle, rgba(255,182,193,0.13), transparent 68%);
+      pointer-events: none;
+      filter: blur(6px);
+    }
+    .story-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(3.5rem, 5rem) 1fr;
+      gap: 1rem;
+      padding: 1.45rem;
+      background:
+        linear-gradient(145deg, rgba(255,246,224,0.98), rgba(255,227,232,0.95)),
+        repeating-linear-gradient(0deg, transparent 0 29px, rgba(95,55,55,0.08) 30px);
+      border: 1px solid rgba(120,80,60,0.18);
+      box-shadow: 0 22px 36px rgba(0,0,0,0.26);
+      overflow: hidden;
+      transform: rotate(var(--note-tilt, -1.2deg));
+      transform-origin: center;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      cursor: pointer;
+    }
+    .story-card:nth-child(2) { --note-tilt: 1.1deg; }
+    .story-card:nth-child(3) { --note-tilt: -0.4deg; }
+    .story-card:nth-child(4) { --note-tilt: 1.8deg; }
+    .story-card::before {
+      content: '';
+      position: absolute;
+      top: -0.45rem;
+      left: 1.2rem;
+      width: 4.1rem;
+      height: 1.1rem;
+      background: rgba(255,248,225,0.72);
+      border: 1px solid rgba(170,140,105,0.16);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+      transform: rotate(-8deg);
+      z-index: 2;
+    }
+    .story-card::after {
+      content: 'xoxo';
+      position: absolute;
+      right: 1rem;
+      bottom: 0.85rem;
+      color: rgba(193,96,111,0.16);
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 2rem;
+      font-style: italic;
+      pointer-events: none;
+    }
+    .story-card:hover {
+      transform: translateY(-4px) rotate(0deg);
+      box-shadow: 0 28px 44px rgba(0,0,0,0.32);
+    }
+    .story-card:focus-visible {
+      outline: 2px solid rgba(255,201,188,0.86);
+      outline-offset: 4px;
+    }
+    .story-card.core-memory {
+      background:
+        linear-gradient(145deg, rgba(255,238,212,0.98), rgba(255,203,211,0.96)),
+        repeating-linear-gradient(0deg, transparent 0 29px, rgba(95,55,55,0.08) 30px);
+      border-color: rgba(214,112,126,0.32);
+    }
+    .story-card.core-memory .timeline-date { color: #b84f62; }
+    .story-card.core-memory .timeline-event { color: #3a2222; }
+    .story-number {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(2.3rem, 6vw, 3.5rem);
+      font-weight: 300;
+      line-height: 0.85;
+      color: rgba(193,96,111,0.32);
+    }
+    .story-text { position: relative; z-index: 1; }
+    .story-card .timeline-date { font-size: 0.63rem; letter-spacing: 0.25em; color: #b86572; text-transform: uppercase; margin-bottom: 0.4rem; }
+    .story-card .timeline-event { font-family: 'Cormorant Garamond', serif; font-size: 1.35rem; font-weight: 400; color: #3a2222; }
+    .story-card .timeline-note { margin-top: 0.3rem; font-size: 0.78rem; color: rgba(58,34,34,0.66); line-height: 1.6; }
+    .story-closing {
+      margin-top: 1.6rem;
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.2rem;
+      font-style: italic;
+      color: rgba(223,245,239,0.82);
+    }
+
+    /* SCRAPBOOK POPUP */
+    .scrapbook-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 260;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      background: rgba(4,8,8,0.78);
+      backdrop-filter: blur(10px);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.25s ease, visibility 0.25s ease;
+    }
+    .scrapbook-overlay.active {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: all;
+    }
+    .scrapbook-popup {
+      width: min(1080px, 96vw);
+      max-height: 90vh;
+      overflow: auto;
+      position: relative;
+      border: 1px solid rgba(255,226,203,0.28);
+      background:
+        radial-gradient(circle at 15% 0%, rgba(255,205,214,0.18), transparent 28%),
+        radial-gradient(circle at 90% 20%, rgba(78,205,196,0.10), transparent 30%),
+        linear-gradient(135deg, #2a1f1d, #101817 55%, #1d2927);
+      box-shadow: 0 38px 90px rgba(0,0,0,0.62);
+      padding: clamp(1rem, 3vw, 2rem);
+    }
+    .scrapbook-popup::before {
+      content: '';
+      position: absolute;
+      inset: 0.7rem;
+      border: 1px dashed rgba(255,235,210,0.18);
+      pointer-events: none;
+    }
+    .scrapbook-head {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.3rem;
+    }
+    .scrapbook-kicker {
+      color: #ffc9bc;
+      font-size: 0.64rem;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      margin-bottom: 0.45rem;
+    }
+    .scrapbook-head h3 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      font-weight: 300;
+      color: #fff2dd;
+      line-height: 0.95;
+    }
+    .scrapbook-head p {
+      max-width: 580px;
+      margin-top: 0.75rem;
+      color: rgba(255,242,221,0.62);
+      font-size: 0.82rem;
+      line-height: 1.7;
+    }
+    .scrapbook-close {
+      border: 1px solid rgba(255,226,203,0.26);
+      background: rgba(255,238,210,0.09);
+      color: #ffe8d4;
+      width: 2.4rem;
+      height: 2.4rem;
+      font-size: 1rem;
+      transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+    .scrapbook-close:hover {
+      color: #ffc9bc;
+      border-color: rgba(255,201,188,0.62);
+      transform: rotate(6deg);
+    }
+    .scrapbook-book {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.2rem;
+    }
+    .scrapbook-page {
+      position: relative;
+      min-height: 360px;
+      padding: 1.1rem;
+      color: #422b26;
+      background:
+        linear-gradient(145deg, rgba(255,249,232,0.98), rgba(255,230,220,0.96)),
+        repeating-linear-gradient(0deg, transparent 0 27px, rgba(115,80,62,0.08) 28px);
+      border: 1px solid rgba(125,82,62,0.22);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32), 0 20px 38px rgba(0,0,0,0.28);
+      transform: rotate(var(--page-tilt, -0.8deg));
+      overflow: hidden;
+    }
+    .scrapbook-page:nth-child(2) { --page-tilt: 0.9deg; }
+    .scrapbook-page:nth-child(3) { --page-tilt: 0.4deg; }
+    .scrapbook-page:nth-child(4) { --page-tilt: -1deg; }
+    .scrapbook-page::before {
+      content: '';
+      position: absolute;
+      top: -0.4rem;
+      right: 1.4rem;
+      width: 4.6rem;
+      height: 1.15rem;
+      background: rgba(255,246,218,0.75);
+      border: 1px solid rgba(166,130,92,0.16);
+      transform: rotate(8deg);
+      box-shadow: 0 4px 9px rgba(0,0,0,0.09);
+      z-index: 2;
+    }
+    .scrapbook-page h4 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.65rem;
+      color: #3a2222;
+      margin-bottom: 0.35rem;
+    }
+    .scrapbook-page-date {
+      color: #ba5d6c;
+      font-size: 0.62rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      margin-bottom: 0.8rem;
+    }
+    .scrapbook-page-note {
+      color: rgba(58,34,34,0.68);
+      font-size: 0.78rem;
+      line-height: 1.65;
+      margin-bottom: 1rem;
+    }
+    .scrapbook-photo-stack {
+      position: relative;
+      min-height: 150px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.65rem;
+      align-items: end;
+      margin-top: auto;
+    }
+    .scrapbook-photo,
+    .scrapbook-empty-photo {
+      position: relative;
+      aspect-ratio: 1 / 1;
+      padding: 0.45rem 0.45rem 1rem;
+      background: #fff8ee;
+      border: 1px solid rgba(112,76,55,0.14);
+      box-shadow: 0 12px 20px rgba(70,42,31,0.18);
+      transform: rotate(var(--photo-tilt, -3deg));
+    }
+    .scrapbook-photo { cursor: pointer; }
+    .scrapbook-photo:nth-child(2) { --photo-tilt: 4deg; }
+    .scrapbook-photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      border: 1px solid rgba(112,76,55,0.10);
+    }
+    .scrapbook-empty-photo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      border-style: dashed;
+      color: rgba(58,34,34,0.44);
+      font-size: 0.72rem;
+      line-height: 1.5;
+    }
+    .scrapbook-page-open {
+      margin-top: 1rem;
+      border: 1px solid rgba(186,93,108,0.30);
+      background: rgba(186,93,108,0.08);
+      color: #9d4353;
+      padding: 0.55rem 0.8rem;
+      font-size: 0.62rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+    .scrapbook-page-open:hover {
+      background: rgba(186,93,108,0.14);
+      transform: translateY(-1px);
+    }
+    .scrapbook-pocket {
+      position: relative;
+      margin-top: 1.2rem;
+      padding: 1rem;
+      border: 1px solid rgba(255,226,203,0.18);
+      background: rgba(255,238,210,0.07);
+    }
+    .scrapbook-pocket-title {
+      color: #ffc9bc;
+      font-size: 0.62rem;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+    }
+    .scrapbook-pocket-strip {
+      display: flex;
+      gap: 0.7rem;
+      overflow-x: auto;
+      padding: 0.2rem 0 0.45rem;
+    }
+    .scrapbook-pocket-photo {
+      flex: 0 0 86px;
+      width: 86px;
+      aspect-ratio: 1 / 1;
+      padding: 0.32rem;
+      border: 1px solid rgba(112,76,55,0.18);
+      background: #fff8ee;
+      transform: rotate(var(--pocket-tilt, -2deg));
+      cursor: pointer;
+      box-shadow: 0 10px 18px rgba(0,0,0,0.18);
+    }
+    .scrapbook-pocket-photo:nth-child(2n) { --pocket-tilt: 2deg; }
+    .scrapbook-pocket-photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .scrapbook-footer {
+      position: relative;
+      margin-top: 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      color: rgba(255,242,221,0.62);
+      font-size: 0.76rem;
+      line-height: 1.6;
     }
 
     /* FOOTER */
@@ -668,8 +1006,6 @@
       nav { padding: 1rem 1.5rem; }
       .nav-links { display: none; }
       section { padding: 4rem 1.5rem; }
-      .featured-grid { grid-template-columns: 1fr; }
-      .photo-slot:first-child { grid-row: span 1; min-height: 300px; }
       .gallery-tools { margin: -1rem 0 1rem; align-items: flex-start; }
       .memory-slide { grid-template-columns: 1fr; }
       .memory-frame { min-height: 360px; }
@@ -703,6 +1039,28 @@
         min-height: 0;
         aspect-ratio: 4 / 5;
       }
+      .story-card {
+        grid-template-columns: 1fr;
+        gap: 0.85rem;
+        padding: 1.25rem;
+      }
+      .story-chapters,
+      .scrapbook-book {
+        grid-template-columns: 1fr;
+      }
+      .story-number { font-size: 2.2rem; }
+      .scrapbook-overlay { padding: 0.8rem; }
+      .scrapbook-popup { max-height: 92vh; padding: 1rem; }
+      .scrapbook-head {
+        flex-direction: column;
+        padding-right: 3rem;
+      }
+      .scrapbook-close {
+        position: absolute;
+        top: 0;
+        right: 0;
+      }
+      .scrapbook-page { min-height: 320px; }
       footer, .flash-wrap { padding: 2rem 1.5rem; }
     }
     /* ── TILT FX ── */
@@ -754,9 +1112,8 @@
 <nav>
   <span class="nav-logo">You &amp; Me</span>
   <ul class="nav-links">
-    <li><a href="#featured">Featured</a></li>
-    <li><a href="#gallery">Gallery</a></li>
-    <li><a href="#moments">Moments</a></li>
+    <li><a href="#memories">Memories</a></li>
+    <li><a href="#story">Story</a></li>
   </ul>
   <button class="btn-upload-nav" onclick="openModal()">+ Upload Photo</button>
 </nav>
@@ -791,13 +1148,6 @@
         <input type="text" name="caption" placeholder="e.g. Golden hour together…" />
       </div>
       <div class="form-group">
-        <label>Section</label>
-        <select name="section">
-          <option value="gallery">Gallery</option>
-          <option value="featured">Featured (top 3)</option>
-        </select>
-      </div>
-      <div class="form-group">
         <label>Photos</label>
         <div class="drop-zone" id="dropZone">
           <input type="file" name="photo" id="fileInput" accept="image/*" multiple required onchange="handleUploadFileChange(this)"/>
@@ -817,58 +1167,22 @@
   </div>
 </div>
 
-<!-- FEATURED -->
-<section id="featured">
-  <div class="featured-wrap">
-    <p class="section-label">Featured</p>
-    <h2 class="section-title">Our <em>favorite</em> frames</h2>
-    <div class="featured-grid">
-      {% for i in range(3) %}
-        {% if i < featured|length %}
-          <div class="photo-slot tilt" {% if i == 0 %}style="min-height:560px;"{% else %}style="min-height:275px;"{% endif %}>
-            <img src="{{ featured[i].url }}" alt="{{ featured[i].caption }}" />
-            <form method="POST" action="/replace/{{ featured[i].id }}" enctype="multipart/form-data" class="featured-replace-form" onclick="event.stopPropagation()">
-              <input type="file" name="photo" accept="image/*" class="replace-input" onchange="submitFeaturedReplacement(this)" required />
-              <button type="button" class="delete-btn replace-btn" onclick="openFeaturedReplacement(this)">Replace</button>
-            </form>
-          </div>
-        {% else %}
-          <div class="photo-slot" onclick="openModal()" {% if i == 0 %}style="min-height:560px;"{% else %}style="min-height:275px;"{% endif %}>
-            <div class="photo-placeholder" {% if i == 0 %}style="min-height:560px;"{% else %}style="min-height:275px;"{% endif %}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-              <span>+ Upload photo</span>
-            </div>
-          </div>
-        {% endif %}
-      {% endfor %}
-    </div>
-  </div>
-</section>
-
-<!-- QUOTE -->
-<div class="quote-section">
-  <blockquote>
-    <p>"I have found the one whom my soul loves."</p>
-    <cite>— Song of Solomon 3:4</cite>
-  </blockquote>
-</div>
-
-<!-- GALLERY -->
-<section class="gallery-section" id="gallery">
+<!-- MEMORIES -->
+<section class="gallery-section" id="memories">
   <div class="gallery-shell">
-    <p class="section-label">Gallery</p>
+    <p class="section-label">Memories</p>
     <h2 class="section-title">Every <em>little</em> moment</h2>
-    {% if gallery %}
+    {% if memory_photos %}
       <div class="gallery-tools">
         <div class="gallery-intro">
-          <p class="gallery-note">A wall of keepsakes, pinned up all at once.</p>
-          <p class="gallery-count">{{ gallery|length }} photo{% if gallery|length != 1 %}s{% endif %} on the wall</p>
+          <p class="gallery-note">The gallery, brought forward where the favorite frames used to live.</p>
+          <p class="gallery-count">{{ memory_photos|length }} photo{% if memory_photos|length != 1 %}s{% endif %} in our memory reel</p>
         </div>
       </div>
       <div class="gallery-wall-shell">
-        <div class="memory-carousel" data-memory-carousel aria-label="Gallery carousel">
+        <div class="memory-carousel" data-memory-carousel aria-label="Memories carousel">
           <div class="carousel-stage">
-            {% for photo in gallery %}
+            {% for photo in memory_photos %}
               <article
                 class="memory-slide {% if loop.first %}is-active{% endif %}"
                 data-carousel-slide
@@ -877,12 +1191,12 @@
                 aria-hidden="{{ 'false' if loop.first else 'true' }}"
               >
                 <div class="memory-frame">
-                  <img src="{{ photo.url }}" alt="{{ photo.caption or ('Gallery photo ' ~ loop.index) }}" loading="{{ 'eager' if loop.first else 'lazy' }}" />
+                  <img src="{{ photo.url }}" alt="{{ photo.caption or ('Memory photo ' ~ loop.index) }}" loading="{{ 'eager' if loop.first else 'lazy' }}" />
                 </div>
                 <div class="memory-panel">
                   <span class="memory-index">Memory {{ "%02d"|format(loop.index) }}</span>
                   <h3 class="memory-title">{{ photo.caption or 'A favorite frame worth keeping close.' }}</h3>
-                  <p class="memory-meta">Saved photo {{ loop.index }} of {{ gallery|length }}</p>
+                  <p class="memory-meta">Saved photo {{ loop.index }} of {{ memory_photos|length }}</p>
                   <button
                     class="carousel-open"
                     type="button"
@@ -899,7 +1213,7 @@
               </article>
             {% endfor %}
           </div>
-          {% if gallery|length > 1 %}
+          {% if memory_photos|length > 1 %}
             <div class="carousel-nav" aria-label="Carousel controls">
               <button class="carousel-btn" type="button" data-carousel-prev aria-label="Previous photo">&lsaquo;</button>
               <button class="carousel-btn" type="button" data-carousel-next aria-label="Next photo">&rsaquo;</button>
@@ -907,13 +1221,13 @@
           {% endif %}
           <div class="carousel-footer">
             <div class="carousel-track" aria-label="Choose a photo">
-              {% for photo in gallery %}
+              {% for photo in memory_photos %}
                 <button class="carousel-dot {% if loop.first %}is-active{% endif %}" type="button" data-carousel-dot="{{ loop.index0 }}" aria-label="Show photo {{ loop.index }}" aria-current="{{ 'true' if loop.first else 'false' }}">
                   <img src="{{ photo.url }}" alt="" loading="lazy" />
                 </button>
               {% endfor %}
             </div>
-            <span class="carousel-count" data-carousel-count>1 / {{ gallery|length }}</span>
+            <span class="carousel-count" data-carousel-count>1 / {{ memory_photos|length }}</span>
           </div>
         </div>
       </div>
@@ -926,36 +1240,169 @@
   </div>
 </section>
 
-<!-- TIMELINE -->
-<section id="moments">
+<!-- QUOTE -->
+<div class="quote-section">
+  <blockquote>
+    <p>"If it's not you, it's not anyone."</p>
+  </blockquote>
+</div>
+
+<!-- STORY -->
+<section id="story">
   <div class="timeline-section">
     <p class="section-label">Our Story</p>
-    <h2 class="section-title"><em>Milestones</em></h2>
-    <div class="timeline">
-      <div class="timeline-item">
-        <p class="timeline-date">The Beginning</p>
-        <p class="timeline-event">Got connected.</p>
-        <p class="timeline-note">01-14-2025</p>
-      </div>
-      <div class="timeline-item">
-        <p class="timeline-date">Something Changed</p>
-        <p class="timeline-event">We became official</p>
-        <p class="timeline-note"> — 11.04.2025 — and counting</p>
-      </div>
-      <div class="timeline-item">
-        <p class="timeline-date">Core Memory</p>
-        <p class="timeline-event">Hung Out at Euphoria and so much FUUUUN!</p>
-        <p class="timeline-note"> — 04.26.2026</p>
-      </div>
-      <div class="timeline-item">
-        <p class="timeline-date">Now & Always</p>
-        <p class="timeline-event">Still going strong</p>
-        <p class="timeline-note">Every day with you is a day worth remembering.</p>
-      </div>
+    <h2 class="section-title">How <em>we became us</em></h2>
+    <p class="story-intro">
+      This is not just a list of dates. It is the quiet thread: how a connection turned into comfort,
+      how ordinary days started feeling worth saving, and how every small memory kept pointing back to us.
+    </p>
+    <div class="story-actions">
+      <button type="button" class="scrapbook-trigger" onclick="openScrapbook()">Open scrapbook</button>
+      <button type="button" class="scrapbook-upload-btn" onclick="openModal()">Attach photos</button>
     </div>
-    <p class="timeline-debug">Timeline Build: {{ template_version or 'unknown' }}</p>
+    <div class="story-chapters">
+      <article class="story-card" data-open-scrapbook tabindex="0" role="button" aria-label="Open scrapbook">
+        <span class="story-number">01</span>
+        <div class="story-text">
+          <p class="timeline-date">The First Spark</p>
+          <p class="timeline-event">Got connected.</p>
+          <p class="timeline-note">January 14, 2025 - a simple beginning that quietly changed the shape of everything after it.</p>
+        </div>
+      </article>
+      <article class="story-card" data-open-scrapbook tabindex="0" role="button" aria-label="Open scrapbook">
+        <span class="story-number">02</span>
+        <div class="story-text">
+          <p class="timeline-date">The Choice</p>
+          <p class="timeline-event">We became official.</p>
+          <p class="timeline-note">November 4, 2025 - the moment it stopped being maybe and started feeling like home.</p>
+        </div>
+      </article>
+      <article class="story-card core-memory" data-open-scrapbook tabindex="0" role="button" aria-label="Open scrapbook">
+        <span class="story-number">03</span>
+        <div class="story-text">
+          <p class="timeline-date">The Joy</p>
+          <p class="timeline-event">Euphoria became a core memory.</p>
+          <p class="timeline-note">April 26, 2026 - one of those days that proves love is also laughter, lightness, and being fully yourself together.</p>
+        </div>
+      </article>
+      <article class="story-card" data-open-scrapbook tabindex="0" role="button" aria-label="Open scrapbook">
+        <span class="story-number">04</span>
+        <div class="story-text">
+          <p class="timeline-date">The Now</p>
+          <p class="timeline-event">Still choosing each other.</p>
+          <p class="timeline-note">Not perfect, not performative - just two people building something gentle, steady, and real.</p>
+        </div>
+      </article>
+    </div>
+    <p class="story-closing">Every photo above is proof of the same thing: we keep finding reasons to stay.</p>
   </div>
 </section>
+
+<!-- SCRAPBOOK POPUP -->
+<div class="scrapbook-overlay" id="scrapbookOverlay" onclick="closeScrapbookOutside(event)" aria-hidden="true">
+  <div class="scrapbook-popup" role="dialog" aria-modal="true" aria-labelledby="scrapbookTitle">
+    <div class="scrapbook-head">
+      <div>
+        <p class="scrapbook-kicker">little keepsake album</p>
+        <h3 id="scrapbookTitle">Our scrapbook pages</h3>
+        <p>Attach your favorite photos through the upload button, then they will show up here like taped-in memories.</p>
+      </div>
+      <button type="button" class="scrapbook-close" onclick="closeScrapbook()" aria-label="Close scrapbook">x</button>
+    </div>
+
+    <div class="scrapbook-book">
+      {% set first_spark_photos = memory_photos[0:2] %}
+      <article class="scrapbook-page">
+        <p class="scrapbook-page-date">January 14, 2025</p>
+        <h4>The first spark</h4>
+        <p class="scrapbook-page-note">The beginning gets its own page because small starts can become the softest forever things.</p>
+        <div class="scrapbook-photo-stack">
+          {% for photo in first_spark_photos %}
+            <div class="scrapbook-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
+              <img src="{{ photo.url }}" alt="{{ photo.caption or ('Scrapbook photo ' ~ loop.index) }}" loading="lazy" />
+            </div>
+          {% endfor %}
+          {% for _ in range(2 - first_spark_photos|length) %}
+            <div class="scrapbook-empty-photo">Attach a photo for this page</div>
+          {% endfor %}
+        </div>
+        <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
+      </article>
+
+      {% set choice_photos = memory_photos[2:4] %}
+      <article class="scrapbook-page">
+        <p class="scrapbook-page-date">November 4, 2025</p>
+        <h4>The choice</h4>
+        <p class="scrapbook-page-note">The day the maybe became real, and the story started sounding a lot like home.</p>
+        <div class="scrapbook-photo-stack">
+          {% for photo in choice_photos %}
+            <div class="scrapbook-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
+              <img src="{{ photo.url }}" alt="{{ photo.caption or ('Scrapbook photo ' ~ loop.index) }}" loading="lazy" />
+            </div>
+          {% endfor %}
+          {% for _ in range(2 - choice_photos|length) %}
+            <div class="scrapbook-empty-photo">Attach a photo for this page</div>
+          {% endfor %}
+        </div>
+        <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
+      </article>
+
+      {% set joy_photos = memory_photos[4:6] %}
+      <article class="scrapbook-page">
+        <p class="scrapbook-page-date">April 26, 2026</p>
+        <h4>Euphoria day</h4>
+        <p class="scrapbook-page-note">A page for laughter, brightness, and the kind of fun that becomes a tiny private universe.</p>
+        <div class="scrapbook-photo-stack">
+          {% for photo in joy_photos %}
+            <div class="scrapbook-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
+              <img src="{{ photo.url }}" alt="{{ photo.caption or ('Scrapbook photo ' ~ loop.index) }}" loading="lazy" />
+            </div>
+          {% endfor %}
+          {% for _ in range(2 - joy_photos|length) %}
+            <div class="scrapbook-empty-photo">Attach a photo for this page</div>
+          {% endfor %}
+        </div>
+        <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
+      </article>
+
+      {% set now_photos = memory_photos[6:8] %}
+      <article class="scrapbook-page">
+        <p class="scrapbook-page-date">Right now</p>
+        <h4>Still choosing us</h4>
+        <p class="scrapbook-page-note">The newest page is for every ordinary day that quietly becomes another reason to stay.</p>
+        <div class="scrapbook-photo-stack">
+          {% for photo in now_photos %}
+            <div class="scrapbook-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
+              <img src="{{ photo.url }}" alt="{{ photo.caption or ('Scrapbook photo ' ~ loop.index) }}" loading="lazy" />
+            </div>
+          {% endfor %}
+          {% for _ in range(2 - now_photos|length) %}
+            <div class="scrapbook-empty-photo">Attach a photo for this page</div>
+          {% endfor %}
+        </div>
+        <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
+      </article>
+    </div>
+
+    {% if memory_photos %}
+      <div class="scrapbook-pocket">
+        <p class="scrapbook-pocket-title">All attached moments</p>
+        <div class="scrapbook-pocket-strip">
+          {% for photo in memory_photos %}
+            <div class="scrapbook-pocket-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
+              <img src="{{ photo.url }}" alt="{{ photo.caption or ('Attached scrapbook photo ' ~ loop.index) }}" loading="lazy" />
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="scrapbook-footer">
+      <span>{{ memory_photos|length }} uploaded photo{% if memory_photos|length != 1 %}s{% endif %} ready for the scrapbook.</span>
+      <button type="button" class="scrapbook-upload-btn" onclick="openScrapbookUpload()">Upload more moments</button>
+    </div>
+  </div>
+</div>
 
 <!-- FOOTER -->
 <footer>
@@ -987,6 +1434,25 @@
   }
   function closeGalleryCollageOutside(e) {
     if (e.target === document.getElementById('galleryCollageModal')) closeGalleryCollage();
+  }
+  function openScrapbook() {
+    const overlay = document.getElementById('scrapbookOverlay');
+    if (!overlay) return;
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden', 'false');
+  }
+  function closeScrapbook() {
+    const overlay = document.getElementById('scrapbookOverlay');
+    if (!overlay) return;
+    overlay.classList.remove('active');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+  function closeScrapbookOutside(e) {
+    if (e.target === document.getElementById('scrapbookOverlay')) closeScrapbook();
+  }
+  function openScrapbookUpload() {
+    closeScrapbook();
+    openModal();
   }
   const MAX_FILE_BYTES = {{ max_file_size_mb|int }} * 1024 * 1024;
   const MAX_BATCH_BYTES = {{ max_request_size_mb|int }} * 1024 * 1024;
@@ -1026,26 +1492,6 @@
       return;
     }
     showFileName(input);
-  }
-  function openFeaturedReplacement(button) {
-    const form = button.closest('form');
-    if (!form) return;
-    const input = form.querySelector('.replace-input');
-    if (input) input.click();
-  }
-  function submitFeaturedReplacement(input) {
-    if (!input.files || !input.files.length) return;
-    if (input.files[0].size > MAX_FILE_BYTES) {
-      const maxMb = Math.floor(MAX_FILE_BYTES / (1024 * 1024));
-      alert(`Replacement photo is too large. Please choose a file up to ${maxMb}MB.`);
-      input.value = '';
-      return;
-    }
-    if (!confirm('Replace this featured photo?')) {
-      input.value = '';
-      return;
-    }
-    input.form.submit();
   }
   const dz = document.getElementById('dropZone');
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
@@ -1122,7 +1568,7 @@
   }
   function closeLightbox() { document.getElementById('lightbox').classList.remove('active'); }
   document.getElementById('lightbox').addEventListener('click', function(e) { if (e.target === this) closeLightbox(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLightbox(); closeModal(); closeGalleryCollage(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLightbox(); closeModal(); closeGalleryCollage(); closeScrapbook(); } });
   setTimeout(() => {
     document.querySelectorAll('.flash').forEach(el => {
       el.style.transition = 'opacity 0.5s';
@@ -1132,7 +1578,7 @@
   }, 3500);
   // ── TILT FX ──
 function bindGalleryLightbox() {
-  document.querySelectorAll('.gallery-polaroid[data-url], .memory-slide[data-url]').forEach(el => {
+  document.querySelectorAll('.gallery-polaroid[data-url], .memory-slide[data-url], .scrapbook-photo[data-url], .scrapbook-pocket-photo[data-url]').forEach(el => {
     if (el.dataset.lightboxBound === '1') return;
     el.dataset.lightboxBound = '1';
 
@@ -1236,6 +1682,20 @@ function initMemoryCarousel() {
     });
 
     setActive(0);
+  });
+}
+
+function bindScrapbookCards() {
+  document.querySelectorAll('[data-open-scrapbook]').forEach(card => {
+    if (card.dataset.scrapbookBound === '1') return;
+    card.dataset.scrapbookBound = '1';
+
+    card.addEventListener('click', openScrapbook);
+    card.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      openScrapbook();
+    });
   });
 }
 
@@ -1445,6 +1905,7 @@ function initInteractiveEffects() {
   initStarWarp();
   initHeroGradientHover();
   bindGalleryLightbox();
+  bindScrapbookCards();
   initMemoryCarousel();
   initTilt();
 }
