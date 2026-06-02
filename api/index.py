@@ -12,7 +12,6 @@ from functools import wraps
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Any
-from urllib.parse import unquote, urlparse
 
 from flask import (
     Flask,
@@ -28,8 +27,6 @@ from flask import (
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
-import cloudinary
-import cloudinary.uploader
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -38,7 +35,6 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = APP_ROOT / "data"
 STATIC_DIR = APP_ROOT / "static"
 SERVICE_ACCOUNT_PATH = APP_ROOT / "serviceAccountKey.json"
-CLOUDINARY_FILE_PATH = APP_ROOT / "cloudinary.txt"
 RUNNING_ON_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
 TEMP_DIR = Path(gettempdir())
 
@@ -227,69 +223,9 @@ def has_firebase_config() -> bool:
     )
 
 
-def load_cloudinary_config() -> dict[str, str | None]:
-    config = {
-        "cloud_name": os.environ.get("CLOUDINARY_CLOUD_NAME"),
-        "api_key": os.environ.get("CLOUDINARY_API_KEY"),
-        "api_secret": os.environ.get("CLOUDINARY_API_SECRET"),
-    }
-    cloudinary_url = os.environ.get("CLOUDINARY_URL", "").strip()
-    if cloudinary_url:
-        parsed = urlparse(cloudinary_url)
-        config["cloud_name"] = config["cloud_name"] or parsed.hostname
-        config["api_key"] = config["api_key"] or unquote(parsed.username or "")
-        config["api_secret"] = config["api_secret"] or unquote(parsed.password or "")
-
-    if all(config.values()):
-        return config
-    if not CLOUDINARY_FILE_PATH.exists():
-        return config
-
-    try:
-        lines = [
-            line.strip()
-            for line in CLOUDINARY_FILE_PATH.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
-        for idx, line in enumerate(lines):
-            lower = line.lower()
-            if lower == "cloud name" and idx + 1 < len(lines):
-                config["cloud_name"] = config["cloud_name"] or lines[idx + 1]
-            elif lower.startswith("api key"):
-                parts = line.split(" ", 2)
-                if len(parts) >= 3:
-                    config["api_key"] = config["api_key"] or parts[2]
-            elif lower.startswith("api secret"):
-                parts = line.split(" ", 2)
-                if len(parts) >= 3:
-                    config["api_secret"] = config["api_secret"] or parts[2]
-    except Exception as exc:
-        print(f"CLOUDINARY CONFIG READ ERROR: {exc}")
-    return config
-
-
-CLOUDINARY_SETTINGS = load_cloudinary_config()
-cloudinary.config(
-    cloud_name=CLOUDINARY_SETTINGS.get("cloud_name"),
-    api_key=CLOUDINARY_SETTINGS.get("api_key"),
-    api_secret=CLOUDINARY_SETTINGS.get("api_secret"),
-    secure=True,
-)
-
-
-def cloudinary_ready() -> bool:
-    return all(
-        [
-            CLOUDINARY_SETTINGS.get("cloud_name"),
-            CLOUDINARY_SETTINGS.get("api_key"),
-            CLOUDINARY_SETTINGS.get("api_secret"),
-        ]
-    )
-
-
 def normalize_storage_name(name: str | None, default: str) -> str:
     value = (name or "").strip().lower()
-    return value if value in {"sqlite", "firestore", "local", "cloudinary"} else default
+    return value if value in {"sqlite", "firestore", "local"} else default
 
 
 def preferred_database_backend() -> str:
@@ -302,11 +238,6 @@ def preferred_database_backend() -> str:
 
 
 def preferred_media_backend() -> str:
-    explicit = normalize_storage_name(os.environ.get("STORAGE_BACKEND"), "")
-    if explicit in {"local", "cloudinary"}:
-        return explicit
-    if RUNNING_ON_VERCEL and cloudinary_ready():
-        return "cloudinary"
     return "local"
 
 
@@ -739,35 +670,8 @@ class LocalStorage:
             target.unlink()
 
 
-class CloudinaryStorage:
-    name = "cloudinary"
-
-    def available(self) -> bool:
-        return cloudinary_ready()
-
-    def save(self, file_storage) -> dict[str, str | None]:
-        result = cloudinary.uploader.upload(
-            file_storage,
-            folder="memory_house",
-            public_id=uuid.uuid4().hex,
-            overwrite=False,
-            resource_type="image",
-        )
-        return {
-            "url": result["secure_url"],
-            "storage_path": None,
-            "public_id": result["public_id"],
-        }
-
-    def delete(self, photo: dict[str, Any] | None) -> None:
-        public_id = (photo or {}).get("public_id")
-        if public_id:
-            cloudinary.uploader.destroy(public_id)
-
-
 SQLITE_REPOSITORY: SQLiteRepository | None = None
 LOCAL_STORAGE = LocalStorage()
-CLOUDINARY_STORAGE = CloudinaryStorage()
 
 
 def get_sqlite_repository() -> SQLiteRepository:
@@ -802,21 +706,12 @@ def resolve_repository() -> tuple[SQLiteRepository | FirestoreRepository, str, l
     return get_sqlite_repository(), "sqlite", warnings
 
 
-def resolve_media_storage() -> tuple[LocalStorage | CloudinaryStorage, str, list[str]]:
+def resolve_media_storage() -> tuple[LocalStorage, str, list[str]]:
     warnings: list[str] = []
-    preferred = preferred_media_backend()
-    if preferred == "cloudinary":
-        if CLOUDINARY_STORAGE.available():
-            return CLOUDINARY_STORAGE, "cloudinary", warnings
-        warnings.append(
-            "Cloudinary is not configured, so uploads are being stored locally instead."
-        )
-
     if RUNNING_ON_VERCEL:
         warnings.append(
-            "Local uploads are temporary on Vercel. Set `CLOUDINARY_URL` or the "
-            "Cloudinary key variables, then use `STORAGE_BACKEND=cloudinary` for "
-            "durable online media."
+            "Local uploads are temporary on Vercel because serverless files are not "
+            "persistent. Run the site on this computer for durable local image storage."
         )
     return LOCAL_STORAGE, "local", warnings
 
@@ -841,12 +736,6 @@ def featured_slots_remaining(repository: SQLiteRepository | FirestoreRepository)
 
 def delete_photo_asset(photo: dict[str, Any] | None) -> None:
     if not photo:
-        return
-    if photo.get("public_id"):
-        try:
-            cloudinary.uploader.destroy(photo["public_id"])
-        except Exception as exc:
-            print(f"CLOUDINARY DELETE WARNING: {exc}")
         return
     storage_path = photo.get("storage_path")
     if not storage_path:
@@ -935,15 +824,11 @@ def index():
         warnings=warnings,
         firebase_ready=not repository_warnings,
         firebase_error=FIREBASE_ERROR or "",
-        cloudinary_ready=not storage_warnings,
         template_version=build_version(),
         can_edit=not locked,
-        media_is_cloud=media_storage.name == "cloudinary",
         running_on_vercel=RUNNING_ON_VERCEL,
         upload_storage_label=(
-            "Cloudinary"
-            if media_storage.name == "cloudinary"
-            else ("temporary local storage" if RUNNING_ON_VERCEL else "this computer")
+            "temporary local storage" if RUNNING_ON_VERCEL else "this computer"
         ),
         today_iso=date.today().isoformat(),
     )
