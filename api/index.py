@@ -107,6 +107,7 @@ CLOUDINARY_URL = cloudinary_setting("CLOUDINARY_URL").strip()
 CLOUDINARY_CLOUD_NAME = cloudinary_setting("CLOUDINARY_CLOUD_NAME").strip()
 CLOUDINARY_API_KEY = cloudinary_setting("CLOUDINARY_API_KEY").strip()
 CLOUDINARY_API_SECRET = cloudinary_setting("CLOUDINARY_API_SECRET").strip()
+SCRAPBOOK_EDIT_KEY = os.environ.get("SCRAPBOOK_EDIT_KEY", "").strip()
 
 
 def has_cloudinary_credentials():
@@ -136,6 +137,118 @@ def utc_now_iso():
 
 def normalize_photo_section(section):
     return section if section in {"gallery", "featured", "scrapbook"} else "gallery"
+
+
+DEFAULT_SCRAPBOOK_PAGES = [
+    {
+        "id": "first-spark",
+        "number": "01",
+        "story_title": "The First Spark",
+        "story_event": "Got connected.",
+        "story_note": "January 14, 2025 - a simple beginning that quietly changed the shape of everything after it.",
+        "page_date": "January 14, 2025",
+        "page_title": "The first spark",
+        "page_note": "The beginning gets its own page because small starts can become the softest forever things.",
+        "is_core": False,
+    },
+    {
+        "id": "the-choice",
+        "number": "02",
+        "story_title": "The Choice",
+        "story_event": "We became official.",
+        "story_note": "November 4, 2025 - the moment it stopped being maybe and started feeling like home.",
+        "page_date": "November 4, 2025",
+        "page_title": "The choice",
+        "page_note": "The day the maybe became real, and the story started sounding a lot like home.",
+        "is_core": False,
+    },
+    {
+        "id": "euphoria-day",
+        "number": "03",
+        "story_title": "The Joy",
+        "story_event": "Euphoria became a core memory.",
+        "story_note": "April 26, 2026 - one of those days that proves love is also laughter, lightness, and being fully yourself together.",
+        "page_date": "April 26, 2026",
+        "page_title": "Euphoria day",
+        "page_note": "A page for laughter, brightness, and the kind of fun that becomes a tiny private universe.",
+        "is_core": True,
+    },
+    {
+        "id": "right-now",
+        "number": "04",
+        "story_title": "The Now",
+        "story_event": "Still choosing each other.",
+        "story_note": "Not perfect, not performative - just two people building something gentle, steady, and real.",
+        "page_date": "Right now",
+        "page_title": "Still choosing us",
+        "page_note": "The newest page is for every ordinary day that quietly becomes another reason to stay.",
+        "is_core": False,
+    },
+]
+SCRAPBOOK_PAGE_IDS = {page["id"] for page in DEFAULT_SCRAPBOOK_PAGES}
+SCRAPBOOK_PAGE_FIELDS = (
+    "story_title",
+    "story_event",
+    "story_note",
+    "page_date",
+    "page_title",
+    "page_note",
+)
+
+
+def sanitize_text(value, max_length=500):
+    text = (value or "").strip()
+    return text[:max_length]
+
+
+def scrapbook_page_defaults():
+    return [dict(page) for page in DEFAULT_SCRAPBOOK_PAGES]
+
+
+def merge_scrapbook_pages(saved_pages):
+    saved_by_id = {
+        page.get("id"): page
+        for page in (saved_pages or [])
+        if page.get("id") in SCRAPBOOK_PAGE_IDS
+    }
+    pages = []
+    for default_page in scrapbook_page_defaults():
+        saved = saved_by_id.get(default_page["id"], {})
+        merged = {**default_page}
+        for field in SCRAPBOOK_PAGE_FIELDS:
+            value = sanitize_text(saved.get(field), 800 if field.endswith("_note") else 120)
+            if value:
+                merged[field] = value
+        pages.append(merged)
+    return pages
+
+
+def scrapbook_page_form_values(form):
+    return {
+        "story_title": sanitize_text(form.get("story_title"), 120),
+        "story_event": sanitize_text(form.get("story_event"), 180),
+        "story_note": sanitize_text(form.get("story_note"), 800),
+        "page_date": sanitize_text(form.get("page_date"), 120),
+        "page_title": sanitize_text(form.get("page_title"), 120),
+        "page_note": sanitize_text(form.get("page_note"), 800),
+        "updated_at": utc_now_iso(),
+    }
+
+
+def scrapbook_edit_value():
+    return SCRAPBOOK_EDIT_KEY or "1"
+
+
+def scrapbook_edit_allowed():
+    supplied_key = (
+        request.values.get("edit_key")
+        or request.args.get("edit")
+        or request.form.get("edit")
+        or ""
+    ).strip()
+    if SCRAPBOOK_EDIT_KEY:
+        return supplied_key == SCRAPBOOK_EDIT_KEY
+    return supplied_key == "1"
 
 
 # Firebase handles Firestore metadata. Cloudinary handles durable image storage.
@@ -327,6 +440,23 @@ def create_local_photos_table(conn):
     )
 
 
+def create_local_scrapbook_pages_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS scrapbook_pages (
+            id TEXT PRIMARY KEY,
+            story_title TEXT,
+            story_event TEXT,
+            story_note TEXT,
+            page_date TEXT,
+            page_title TEXT,
+            page_note TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+
+
 def migrate_local_photos_table(conn):
     old_table = f"photos_legacy_{uuid.uuid4().hex[:8]}"
     conn.execute(f"ALTER TABLE photos RENAME TO {old_table}")
@@ -372,11 +502,13 @@ def ensure_local_schema():
         ).fetchone()
         if table is None:
             create_local_photos_table(conn)
+            create_local_scrapbook_pages_table(conn)
             return
 
         create_sql = table["sql"] or ""
         if "CHECK" in create_sql.upper() and "SCRAPBOOK" not in create_sql.upper():
             migrate_local_photos_table(conn)
+            create_local_scrapbook_pages_table(conn)
             return
 
         existing = set(local_photo_columns(conn))
@@ -394,6 +526,7 @@ def ensure_local_schema():
         for column, definition in missing_columns.items():
             if column not in existing:
                 conn.execute(f"ALTER TABLE photos ADD COLUMN {column} {definition}")
+        create_local_scrapbook_pages_table(conn)
 
 
 def list_local_photos(section):
@@ -460,6 +593,57 @@ def delete_local_photo(photo_id):
         conn.execute("DELETE FROM photos WHERE id = ?", (photo_id,))
 
 
+def list_local_scrapbook_pages():
+    ensure_local_schema()
+    with local_connect() as conn:
+        rows = conn.execute("SELECT * FROM scrapbook_pages").fetchall()
+    return merge_scrapbook_pages([dict(row) for row in rows])
+
+
+def update_local_scrapbook_page(page_id, values):
+    ensure_local_schema()
+    with local_connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO scrapbook_pages (
+                id, story_title, story_event, story_note, page_date,
+                page_title, page_note, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                story_title = excluded.story_title,
+                story_event = excluded.story_event,
+                story_note = excluded.story_note,
+                page_date = excluded.page_date,
+                page_title = excluded.page_title,
+                page_note = excluded.page_note,
+                updated_at = excluded.updated_at
+            """,
+            (
+                page_id,
+                values.get("story_title", ""),
+                values.get("story_event", ""),
+                values.get("story_note", ""),
+                values.get("page_date", ""),
+                values.get("page_title", ""),
+                values.get("page_note", ""),
+                values.get("updated_at"),
+            ),
+        )
+
+
+def list_cloud_scrapbook_pages(current_db):
+    rows = []
+    try:
+        for doc in current_db.collection("scrapbook_pages").stream(
+            retry=None,
+            timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+        ):
+            rows.append({"id": doc.id, **doc.to_dict()})
+    except Exception as exc:
+        print(f"SCRAPBOOK PAGES LOAD ERROR: {exc}")
+    return merge_scrapbook_pages(rows)
+
+
 def upload_to_local(file_storage, section="gallery"):
     os.makedirs(LOCAL_UPLOAD_DIR, exist_ok=True)
     section = normalize_photo_section(section)
@@ -511,6 +695,8 @@ def index():
     current_storage_ready = True if local_backend else storage_ready()
     warnings = []
     featured, gallery, scrapbook = [], [], []
+    scrapbook_pages = scrapbook_page_defaults()
+    scrapbook_edit_mode = scrapbook_edit_allowed()
     if not local_backend and current_db is None:
         warnings.append(firebase_init_error or "Firebase is not configured.")
     if not local_backend and not current_storage_ready:
@@ -521,6 +707,7 @@ def index():
             featured = list_local_photos("featured")[:3]
             gallery = list_local_photos("gallery")
             scrapbook = list_local_photos("scrapbook")
+            scrapbook_pages = list_local_scrapbook_pages()
         else:
             if current_db is None:
                 raise RuntimeError(firebase_init_error or "Firestore is not configured.")
@@ -569,6 +756,7 @@ def index():
                 key=lambda x: x.get("uploaded_at") or "",
                 reverse=True
             )
+            scrapbook_pages = list_cloud_scrapbook_pages(current_db)
     except Exception as e:
         print(f"INDEX ERROR: {e}")
 
@@ -600,6 +788,10 @@ def index():
         featured=featured,
         gallery=gallery,
         scrapbook=scrapbook,
+        scrapbook_pages_config=scrapbook_pages,
+        scrapbook_edit_mode=scrapbook_edit_mode,
+        scrapbook_edit_value=scrapbook_edit_value(),
+        scrapbook_edit_is_public=not SCRAPBOOK_EDIT_KEY,
         template_version=template_version,
         firebase_ready=current_db is not None,
         firebase_error=firebase_init_error,
@@ -792,6 +984,44 @@ def upload():
         flash(f"Upload failed: {str(e)}", "error")
 
     return redirect(url_for("index"))
+
+
+@app.route("/scrapbook/page/<page_id>", methods=["POST"])
+def update_scrapbook_page(page_id):
+    if not scrapbook_edit_allowed():
+        flash("Use your private edit link to change the scrapbook.", "error")
+        return redirect(url_for("index", _anchor="story"))
+
+    if page_id not in SCRAPBOOK_PAGE_IDS:
+        flash("Scrapbook page not found.", "error")
+        return redirect(url_for("index", edit=scrapbook_edit_value(), _anchor="story"))
+
+    values = scrapbook_page_form_values(request.form)
+    local_backend = use_local_backend()
+
+    try:
+        if local_backend:
+            update_local_scrapbook_page(page_id, values)
+        else:
+            current_db = init_firebase()
+            if current_db is None:
+                raise RuntimeError(firebase_init_error or "Firestore is not configured.")
+            current_db.collection("scrapbook_pages").document(page_id).set(
+                {
+                    **values,
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+                retry=None,
+                timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+            )
+        flash("Scrapbook page saved.", "success")
+    except Exception as exc:
+        print(f"SCRAPBOOK PAGE UPDATE ERROR: {exc}")
+        traceback.print_exc()
+        flash("Scrapbook page could not be saved.", "error")
+
+    return redirect(url_for("index", edit=scrapbook_edit_value(), scrapbook="1", _anchor="story"))
 
 
 @app.route("/replace/<photo_id>", methods=["POST"])

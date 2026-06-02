@@ -639,6 +639,10 @@
     }
     .scrapbook-trigger,
     .scrapbook-upload-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
       border: 1px solid rgba(255,210,188,0.36);
       background: linear-gradient(135deg, rgba(255,238,210,0.16), rgba(255,182,193,0.14));
       color: #ffe8d4;
@@ -894,6 +898,69 @@
       line-height: 1.65;
       margin-bottom: 1rem;
     }
+    .scrapbook-edit-hint {
+      margin: 0.7rem 0 0;
+      color: rgba(255,242,221,0.66);
+      font-size: 0.72rem;
+      line-height: 1.6;
+    }
+    .scrapbook-page-editor {
+      position: relative;
+      z-index: 3;
+      display: grid;
+      gap: 0.55rem;
+      margin-bottom: 1rem;
+      padding: 0.8rem;
+      border: 1px dashed rgba(186,93,108,0.28);
+      background: rgba(255,248,238,0.58);
+    }
+    .scrapbook-page-editor label {
+      display: grid;
+      gap: 0.25rem;
+      color: rgba(58,34,34,0.58);
+      font-size: 0.57rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .scrapbook-page-editor input,
+    .scrapbook-page-editor textarea {
+      width: 100%;
+      border: 1px solid rgba(112,76,55,0.18);
+      background: rgba(255,255,255,0.58);
+      color: #3a2222;
+      padding: 0.48rem 0.55rem;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.72rem;
+      letter-spacing: 0.02em;
+      outline: none;
+    }
+    .scrapbook-page-editor textarea {
+      min-height: 4rem;
+      resize: vertical;
+      line-height: 1.45;
+    }
+    .scrapbook-page-editor input:focus,
+    .scrapbook-page-editor textarea:focus {
+      border-color: rgba(186,93,108,0.56);
+      box-shadow: 0 0 0 3px rgba(186,93,108,0.10);
+    }
+    .scrapbook-editor-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.45rem;
+    }
+    .scrapbook-editor-save {
+      border: 1px solid rgba(186,93,108,0.34);
+      background: rgba(186,93,108,0.12);
+      color: #8d3848;
+      padding: 0.55rem 0.75rem;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.6rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .scrapbook-editor-save:hover { background: rgba(186,93,108,0.18); }
     .scrapbook-photo-stack {
       position: relative;
       min-height: 150px;
@@ -1061,6 +1128,7 @@
       .scrapbook-book {
         grid-template-columns: 1fr;
       }
+      .scrapbook-editor-grid { grid-template-columns: 1fr; }
       .story-number { font-size: 2.2rem; }
       .scrapbook-overlay { padding: 0.8rem; }
       .scrapbook-popup { max-height: 92vh; padding: 1rem; }
@@ -1268,40 +1336,26 @@
     <div class="story-actions">
       <button type="button" class="scrapbook-trigger" onclick="openScrapbook()">Open scrapbook</button>
       <button type="button" class="scrapbook-upload-btn" onclick="openModal('scrapbook')">Attach photos</button>
+      {% if scrapbook_edit_mode %}
+        <a class="scrapbook-upload-btn" href="{{ url_for('index', _anchor='story') }}">Done editing</a>
+      {% elif scrapbook_edit_is_public %}
+        <a class="scrapbook-upload-btn" href="{{ url_for('index', edit=scrapbook_edit_value, scrapbook='1', _anchor='story') }}">Edit scrapbook</a>
+      {% endif %}
     </div>
+    {% if scrapbook_edit_mode %}
+      <p class="scrapbook-edit-hint">Edit mode is on. Open the scrapbook, change the page text, then save each page.</p>
+    {% endif %}
     <div class="story-chapters">
-      <article class="story-card" data-open-scrapbook tabindex="0" role="button" aria-label="Open scrapbook">
-        <span class="story-number">01</span>
-        <div class="story-text">
-          <p class="timeline-date">The First Spark</p>
-          <p class="timeline-event">Got connected.</p>
-          <p class="timeline-note">January 14, 2025 - a simple beginning that quietly changed the shape of everything after it.</p>
-        </div>
-      </article>
-      <article class="story-card" data-open-scrapbook tabindex="0" role="button" aria-label="Open scrapbook">
-        <span class="story-number">02</span>
-        <div class="story-text">
-          <p class="timeline-date">The Choice</p>
-          <p class="timeline-event">We became official.</p>
-          <p class="timeline-note">November 4, 2025 - the moment it stopped being maybe and started feeling like home.</p>
-        </div>
-      </article>
-      <article class="story-card core-memory" data-open-scrapbook tabindex="0" role="button" aria-label="Open scrapbook">
-        <span class="story-number">03</span>
-        <div class="story-text">
-          <p class="timeline-date">The Joy</p>
-          <p class="timeline-event">Euphoria became a core memory.</p>
-          <p class="timeline-note">April 26, 2026 - one of those days that proves love is also laughter, lightness, and being fully yourself together.</p>
-        </div>
-      </article>
-      <article class="story-card" data-open-scrapbook tabindex="0" role="button" aria-label="Open scrapbook">
-        <span class="story-number">04</span>
-        <div class="story-text">
-          <p class="timeline-date">The Now</p>
-          <p class="timeline-event">Still choosing each other.</p>
-          <p class="timeline-note">Not perfect, not performative - just two people building something gentle, steady, and real.</p>
-        </div>
-      </article>
+      {% for page in scrapbook_pages_config %}
+        <article class="story-card {% if page.is_core %}core-memory{% endif %}" data-open-scrapbook tabindex="0" role="button" aria-label="Open scrapbook">
+          <span class="story-number">{{ page.number }}</span>
+          <div class="story-text">
+            <p class="timeline-date">{{ page.story_title }}</p>
+            <p class="timeline-event">{{ page.story_event }}</p>
+            <p class="timeline-note">{{ page.story_note }}</p>
+          </div>
+        </article>
+      {% endfor %}
     </div>
     <p class="story-closing">Every photo above is proof of the same thing: we keep finding reasons to stay.</p>
   </div>
@@ -1320,77 +1374,61 @@
     </div>
 
     <div class="scrapbook-book">
-      {% set first_spark_photos = scrapbook_photos[0:2] %}
-      <article class="scrapbook-page">
-        <p class="scrapbook-page-date">January 14, 2025</p>
-        <h4>The first spark</h4>
-        <p class="scrapbook-page-note">The beginning gets its own page because small starts can become the softest forever things.</p>
-        <div class="scrapbook-photo-stack">
-          {% for photo in first_spark_photos %}
-            <div class="scrapbook-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
-              <img src="{{ photo.url }}" alt="{{ photo.caption or ('Scrapbook photo ' ~ loop.index) }}" loading="lazy" />
-            </div>
-          {% endfor %}
-          {% for _ in range(2 - first_spark_photos|length) %}
-            <div class="scrapbook-empty-photo">Attach a photo for this page</div>
-          {% endfor %}
-        </div>
-        <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
-      </article>
-
-      {% set choice_photos = scrapbook_photos[2:4] %}
-      <article class="scrapbook-page">
-        <p class="scrapbook-page-date">November 4, 2025</p>
-        <h4>The choice</h4>
-        <p class="scrapbook-page-note">The day the maybe became real, and the story started sounding a lot like home.</p>
-        <div class="scrapbook-photo-stack">
-          {% for photo in choice_photos %}
-            <div class="scrapbook-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
-              <img src="{{ photo.url }}" alt="{{ photo.caption or ('Scrapbook photo ' ~ loop.index) }}" loading="lazy" />
-            </div>
-          {% endfor %}
-          {% for _ in range(2 - choice_photos|length) %}
-            <div class="scrapbook-empty-photo">Attach a photo for this page</div>
-          {% endfor %}
-        </div>
-        <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
-      </article>
-
-      {% set joy_photos = scrapbook_photos[4:6] %}
-      <article class="scrapbook-page">
-        <p class="scrapbook-page-date">April 26, 2026</p>
-        <h4>Euphoria day</h4>
-        <p class="scrapbook-page-note">A page for laughter, brightness, and the kind of fun that becomes a tiny private universe.</p>
-        <div class="scrapbook-photo-stack">
-          {% for photo in joy_photos %}
-            <div class="scrapbook-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
-              <img src="{{ photo.url }}" alt="{{ photo.caption or ('Scrapbook photo ' ~ loop.index) }}" loading="lazy" />
-            </div>
-          {% endfor %}
-          {% for _ in range(2 - joy_photos|length) %}
-            <div class="scrapbook-empty-photo">Attach a photo for this page</div>
-          {% endfor %}
-        </div>
-        <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
-      </article>
-
-      {% set now_photos = scrapbook_photos[6:8] %}
-      <article class="scrapbook-page">
-        <p class="scrapbook-page-date">Right now</p>
-        <h4>Still choosing us</h4>
-        <p class="scrapbook-page-note">The newest page is for every ordinary day that quietly becomes another reason to stay.</p>
-        <div class="scrapbook-photo-stack">
-          {% for photo in now_photos %}
-            <div class="scrapbook-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
-              <img src="{{ photo.url }}" alt="{{ photo.caption or ('Scrapbook photo ' ~ loop.index) }}" loading="lazy" />
-            </div>
-          {% endfor %}
-          {% for _ in range(2 - now_photos|length) %}
-            <div class="scrapbook-empty-photo">Attach a photo for this page</div>
-          {% endfor %}
-        </div>
-        <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
-      </article>
+      {% for page in scrapbook_pages_config %}
+        {% set photo_start = loop.index0 * 2 %}
+        {% set page_photos = scrapbook_photos[photo_start:photo_start + 2] %}
+        <article class="scrapbook-page">
+          {% if scrapbook_edit_mode %}
+            <form class="scrapbook-page-editor" method="POST" action="{{ url_for('update_scrapbook_page', page_id=page.id) }}" onclick="event.stopPropagation()">
+              <input type="hidden" name="edit_key" value="{{ scrapbook_edit_value }}" />
+              <div class="scrapbook-editor-grid">
+                <label>
+                  Page date
+                  <input type="text" name="page_date" value="{{ page.page_date }}" maxlength="120" />
+                </label>
+                <label>
+                  Page title
+                  <input type="text" name="page_title" value="{{ page.page_title }}" maxlength="120" />
+                </label>
+              </div>
+              <label>
+                Page note
+                <textarea name="page_note" maxlength="800">{{ page.page_note }}</textarea>
+              </label>
+              <div class="scrapbook-editor-grid">
+                <label>
+                  Story label
+                  <input type="text" name="story_title" value="{{ page.story_title }}" maxlength="120" />
+                </label>
+                <label>
+                  Story headline
+                  <input type="text" name="story_event" value="{{ page.story_event }}" maxlength="180" />
+                </label>
+              </div>
+              <label>
+                Story note
+                <textarea name="story_note" maxlength="800">{{ page.story_note }}</textarea>
+              </label>
+              <button type="submit" class="scrapbook-editor-save">Save this page</button>
+            </form>
+          {% else %}
+            <p class="scrapbook-page-date">{{ page.page_date }}</p>
+            <h4>{{ page.page_title }}</h4>
+            <p class="scrapbook-page-note">{{ page.page_note }}</p>
+          {% endif %}
+          <div class="scrapbook-photo-stack">
+            {% for photo in page_photos %}
+              <div class="scrapbook-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
+                <img src="{{ photo.url }}" alt="{{ photo.caption or ('Scrapbook photo ' ~ loop.index) }}" loading="lazy" />
+              </div>
+            {% endfor %}
+            {% for _ in range(2 - page_photos|length) %}
+              <div class="scrapbook-empty-photo">Attach a photo for this page</div>
+            {% endfor %}
+          </div>
+          <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
+        </article>
+      {% endfor %}
     </div>
 
     {% if scrapbook_photos %}
@@ -1484,6 +1522,11 @@
   function openScrapbookUpload() {
     closeScrapbook();
     openModal('scrapbook');
+  }
+  function openScrapbookFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('scrapbook') !== '1') return;
+    requestAnimationFrame(openScrapbook);
   }
   const MAX_FILE_BYTES = {{ max_file_size_mb|int }} * 1024 * 1024;
   const MAX_BATCH_BYTES = {{ max_request_size_mb|int }} * 1024 * 1024;
@@ -2001,6 +2044,7 @@ function initInteractiveEffects() {
   bindGalleryLightbox();
   bindScrapbookCards();
   bindScrapbookScroll();
+  openScrapbookFromUrl();
   initMemoryCarousel();
   initTilt();
 }
