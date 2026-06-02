@@ -1,4 +1,5 @@
 {%- set memory_photos = (featured or []) + (gallery or []) -%}
+{%- set scrapbook_photos = scrapbook or [] -%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -79,6 +80,7 @@
     .form-group label { display: block; font-size: 0.65rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; }
     .form-group input[type="text"], .form-group select { width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary); padding: 0.7rem 0.9rem; font-family: 'Inter', sans-serif; font-size: 0.82rem; font-weight: 300; outline: none; transition: border-color 0.2s; }
     .form-group input[type="text"]:focus, .form-group select:focus { border-color: var(--accent); }
+    .upload-target { margin: -0.4rem 0 1.2rem; color: var(--accent-3); font-size: 0.64rem; letter-spacing: 0.22em; text-transform: uppercase; }
     .drop-zone { border: 1.5px dashed rgba(78,205,196,0.22); padding: 2.5rem 1rem; text-align: center; cursor: pointer; transition: background 0.25s, border-color 0.25s; position: relative; }
     .drop-zone:hover, .drop-zone.dragover { background: var(--accent-soft); border-color: var(--accent); }
     .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
@@ -1115,7 +1117,7 @@
     <li><a href="#memories">Memories</a></li>
     <li><a href="#story">Story</a></li>
   </ul>
-  <button class="btn-upload-nav" onclick="openModal()">+ Upload Photo</button>
+  <button class="btn-upload-nav" onclick="openModal('gallery')">+ Upload Photo</button>
 </nav>
 
 <!-- FLASH MESSAGES -->
@@ -1143,10 +1145,12 @@
     <h3>Upload Photos</h3>
     <p class="sub">JPG, PNG, WEBP or GIF &nbsp;&middot;&nbsp; Max {{ max_file_size_mb }}MB per file ({{ max_request_size_mb }}MB total) &nbsp;&middot;&nbsp; Saved to {{ upload_storage_label }}</p>
     <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
+      <input type="hidden" name="section" id="uploadSection" value="gallery" />
       <div class="form-group">
         <label>Caption</label>
         <input type="text" name="caption" placeholder="e.g. Golden hour together…" />
       </div>
+      <p class="upload-target" id="uploadTargetText">Saving to Gallery</p>
       <div class="form-group">
         <label>Photos</label>
         <div class="drop-zone" id="dropZone">
@@ -1156,13 +1160,7 @@
           <p class="file-chosen" id="fileChosen"></p>
         </div>
       </div>
-      <button type="submit" class="btn-submit">
-        {% if running_on_vercel %}
-          Save temporarily
-        {% else %}
-          Save to this computer
-        {% endif %}
-      </button>
+      <button type="submit" class="btn-submit" id="uploadSubmitButton">Upload to Gallery</button>
     </form>
   </div>
 </div>
@@ -1232,7 +1230,7 @@
         </div>
       </div>
     {% else %}
-      <div class="gallery-empty" onclick="openModal()">
+      <div class="gallery-empty" onclick="openModal('gallery')">
         <span>No photos yet</span>
         Click here or the Upload button to add your first photo.
       </div>
@@ -1258,7 +1256,7 @@
     </p>
     <div class="story-actions">
       <button type="button" class="scrapbook-trigger" onclick="openScrapbook()">Open scrapbook</button>
-      <button type="button" class="scrapbook-upload-btn" onclick="openModal()">Attach photos</button>
+      <button type="button" class="scrapbook-upload-btn" onclick="openModal('scrapbook')">Attach photos</button>
     </div>
     <div class="story-chapters">
       <article class="story-card" data-open-scrapbook tabindex="0" role="button" aria-label="Open scrapbook">
@@ -1311,7 +1309,7 @@
     </div>
 
     <div class="scrapbook-book">
-      {% set first_spark_photos = memory_photos[0:2] %}
+      {% set first_spark_photos = scrapbook_photos[0:2] %}
       <article class="scrapbook-page">
         <p class="scrapbook-page-date">January 14, 2025</p>
         <h4>The first spark</h4>
@@ -1329,7 +1327,7 @@
         <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
       </article>
 
-      {% set choice_photos = memory_photos[2:4] %}
+      {% set choice_photos = scrapbook_photos[2:4] %}
       <article class="scrapbook-page">
         <p class="scrapbook-page-date">November 4, 2025</p>
         <h4>The choice</h4>
@@ -1347,7 +1345,7 @@
         <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
       </article>
 
-      {% set joy_photos = memory_photos[4:6] %}
+      {% set joy_photos = scrapbook_photos[4:6] %}
       <article class="scrapbook-page">
         <p class="scrapbook-page-date">April 26, 2026</p>
         <h4>Euphoria day</h4>
@@ -1365,7 +1363,7 @@
         <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
       </article>
 
-      {% set now_photos = memory_photos[6:8] %}
+      {% set now_photos = scrapbook_photos[6:8] %}
       <article class="scrapbook-page">
         <p class="scrapbook-page-date">Right now</p>
         <h4>Still choosing us</h4>
@@ -1384,11 +1382,11 @@
       </article>
     </div>
 
-    {% if memory_photos %}
+    {% if scrapbook_photos %}
       <div class="scrapbook-pocket">
         <p class="scrapbook-pocket-title">All attached moments</p>
         <div class="scrapbook-pocket-strip">
-          {% for photo in memory_photos %}
+          {% for photo in scrapbook_photos %}
             <div class="scrapbook-pocket-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
               <img src="{{ photo.url }}" alt="{{ photo.caption or ('Attached scrapbook photo ' ~ loop.index) }}" loading="lazy" />
             </div>
@@ -1398,7 +1396,7 @@
     {% endif %}
 
     <div class="scrapbook-footer">
-      <span>{{ memory_photos|length }} uploaded photo{% if memory_photos|length != 1 %}s{% endif %} ready for the scrapbook.</span>
+      <span>{{ scrapbook_photos|length }} scrapbook photo{% if scrapbook_photos|length != 1 %}s{% endif %} ready for the scrapbook.</span>
       <button type="button" class="scrapbook-upload-btn" onclick="openScrapbookUpload()">Upload more moments</button>
     </div>
   </div>
@@ -1425,7 +1423,23 @@
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }
   document.getElementById('year').textContent = new Date().getFullYear();
-  function openModal() { document.getElementById('modalOverlay').classList.add('active'); }
+  function setUploadSection(section = 'gallery') {
+    const normalized = section === 'scrapbook' ? 'scrapbook' : 'gallery';
+    const input = document.getElementById('uploadSection');
+    const targetText = document.getElementById('uploadTargetText');
+    const submitButton = document.getElementById('uploadSubmitButton');
+    if (input) input.value = normalized;
+    if (targetText) {
+      targetText.textContent = normalized === 'scrapbook' ? 'Saving to Scrapbook' : 'Saving to Gallery';
+    }
+    if (submitButton) {
+      submitButton.textContent = normalized === 'scrapbook' ? 'Upload to Scrapbook' : 'Upload to Gallery';
+    }
+  }
+  function openModal(section = 'gallery') {
+    setUploadSection(section);
+    document.getElementById('modalOverlay').classList.add('active');
+  }
   function closeModal() { document.getElementById('modalOverlay').classList.remove('active'); }
   function closeModalOutside(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
   function openGalleryCollage() {
@@ -1458,13 +1472,11 @@
   }
   function openScrapbookUpload() {
     closeScrapbook();
-    openModal();
+    openModal('scrapbook');
   }
   const MAX_FILE_BYTES = {{ max_file_size_mb|int }} * 1024 * 1024;
   const MAX_BATCH_BYTES = {{ max_request_size_mb|int }} * 1024 * 1024;
-  const UPLOAD_BUTTON_LABEL = {{ (
-    'Save temporarily' if running_on_vercel else 'Save to this computer'
-  )|tojson }};
+  const UPLOAD_BUTTON_LABEL = 'Upload photos';
 
   function showFileName(input) {
     const chosen = document.getElementById('fileChosen');
@@ -1538,7 +1550,7 @@
         }
 
         const captionInput = uploadForm.querySelector('input[name="caption"]');
-        const sectionInput = uploadForm.querySelector('select[name="section"]');
+        const sectionInput = uploadForm.querySelector('[name="section"]');
         const caption = captionInput ? captionInput.value : '';
         const section = sectionInput ? sectionInput.value : 'gallery';
 

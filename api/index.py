@@ -118,17 +118,18 @@ def build_storage_url(storage_path):
     return f"/uploads/{quote(storage_path, safe='/')}"
 
 
-def upload_to_storage(file_storage):
+def upload_to_storage(file_storage, section="gallery"):
     bucket = init_storage_bucket()
     if bucket is None:
         raise RuntimeError(storage_init_error or "Firebase Storage is not configured.")
 
+    section = section if section in {"gallery", "featured", "scrapbook"} else "gallery"
     original_name = secure_filename(file_storage.filename or "photo")
     extension = ""
     if "." in original_name:
         extension = "." + original_name.rsplit(".", 1)[1].lower()
     filename = f"{uuid.uuid4().hex}{extension}"
-    storage_path = f"couple_gallery/{filename}"
+    storage_path = f"couple_gallery/{section}/{filename}"
     blob = bucket.blob(storage_path)
     content_type = file_storage.mimetype or "application/octet-stream"
 
@@ -176,6 +177,7 @@ def index():
     current_db = init_firebase()
     current_storage_ready = storage_ready()
     warnings = []
+    featured, gallery, scrapbook = [], [], []
     if current_db is None:
         warnings.append(firebase_init_error or "Firebase is not configured.")
     if not current_storage_ready:
@@ -190,6 +192,9 @@ def index():
         ).limit(3)
         gallery_ref = current_db.collection("photos").where(
             filter=FieldFilter("section", "==", "gallery")
+        )
+        scrapbook_ref = current_db.collection("photos").where(
+            filter=FieldFilter("section", "==", "scrapbook")
         )
 
         featured = sorted(
@@ -215,15 +220,25 @@ def index():
             key=lambda x: x.get("uploaded_at") or "",
             reverse=True
         )
+        scrapbook = sorted(
+            [
+                {"id": d.id, **d.to_dict()}
+                for d in scrapbook_ref.stream(
+                    retry=None,
+                    timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+                )
+            ],
+            key=lambda x: x.get("uploaded_at") or "",
+            reverse=True
+        )
     except Exception as e:
         print(f"INDEX ERROR: {e}")
-        featured, gallery = [], []
 
-    total_photos = len(featured) + len(gallery)
+    total_photos = len(featured) + len(gallery) + len(scrapbook)
     latest_caption = next(
         (
             photo.get("caption", "").strip()
-            for photo in (gallery + featured)
+            for photo in (gallery + featured + scrapbook)
             if photo.get("caption", "").strip()
         ),
         ""
@@ -246,6 +261,7 @@ def index():
         "index.html",
         featured=featured,
         gallery=gallery,
+        scrapbook=scrapbook,
         template_version=template_version,
         firebase_ready=current_db is not None,
         firebase_error=firebase_init_error,
@@ -323,7 +339,7 @@ def upload():
 
         caption = request.form.get("caption", "").strip()
         section = request.form.get("section", "gallery")
-        if section not in {"gallery", "featured"}:
+        if section not in {"gallery", "featured", "scrapbook"}:
             section = "gallery"
         uploaded_count = 0
         invalid_count = 0
@@ -342,7 +358,7 @@ def upload():
 
             result = None
             try:
-                result = upload_to_storage(file)
+                result = upload_to_storage(file, section)
 
                 current_db.collection("photos").add(
                     {
@@ -423,9 +439,14 @@ def replace(photo_id):
             return redirect(url_for("index"))
 
         data = doc.to_dict() or {}
+        section = (
+            data.get("section")
+            if data.get("section") in {"gallery", "featured", "scrapbook"}
+            else "gallery"
+        )
 
         # Upload the new image first so we do not lose the existing one if upload fails.
-        result = upload_to_storage(file)
+        result = upload_to_storage(file, section)
 
         doc_ref.update(
             {
