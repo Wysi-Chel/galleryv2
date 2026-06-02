@@ -775,6 +775,11 @@
       width: min(1080px, 96vw);
       max-height: 90vh;
       overflow: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
       position: relative;
       border: 1px solid rgba(255,226,203,0.28);
       background:
@@ -784,6 +789,7 @@
       box-shadow: 0 38px 90px rgba(0,0,0,0.62);
       padding: clamp(1rem, 3vw, 2rem);
     }
+    .scrapbook-popup::-webkit-scrollbar { display: none; }
     .scrapbook-popup::before {
       content: '';
       position: absolute;
@@ -959,8 +965,13 @@
       display: flex;
       gap: 0.7rem;
       overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      -webkit-overflow-scrolling: touch;
       padding: 0.2rem 0 0.45rem;
     }
+    .scrapbook-pocket-strip::-webkit-scrollbar { display: none; }
     .scrapbook-pocket-photo {
       flex: 0 0 86px;
       width: 86px;
@@ -1298,7 +1309,7 @@
 
 <!-- SCRAPBOOK POPUP -->
 <div class="scrapbook-overlay" id="scrapbookOverlay" onclick="closeScrapbookOutside(event)" aria-hidden="true">
-  <div class="scrapbook-popup" role="dialog" aria-modal="true" aria-labelledby="scrapbookTitle">
+  <div class="scrapbook-popup" role="dialog" aria-modal="true" aria-labelledby="scrapbookTitle" data-lenis-prevent>
     <div class="scrapbook-head">
       <div>
         <p class="scrapbook-kicker">little keepsake album</p>
@@ -1728,6 +1739,20 @@ function bindScrapbookCards() {
   });
 }
 
+function bindScrapbookScroll() {
+  const popup = document.querySelector('.scrapbook-popup');
+  if (!popup || popup.dataset.scrollBound === '1') return;
+  popup.dataset.scrollBound = '1';
+
+  popup.addEventListener('wheel', event => {
+    event.stopPropagation();
+  }, { passive: true });
+
+  popup.addEventListener('touchmove', event => {
+    event.stopPropagation();
+  }, { passive: true });
+}
+
 function initTilt(root = document) {
   const supportsHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 
@@ -1935,6 +1960,7 @@ function initInteractiveEffects() {
   initHeroGradientHover();
   bindGalleryLightbox();
   bindScrapbookCards();
+  bindScrapbookScroll();
   initMemoryCarousel();
   initTilt();
 }
