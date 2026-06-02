@@ -1418,6 +1418,12 @@
 </div>
 
 <script>
+  if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+  }
+  if (!window.location.hash) {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }
   document.getElementById('year').textContent = new Date().getFullYear();
   function openModal() { document.getElementById('modalOverlay').classList.add('active'); }
   function closeModal() { document.getElementById('modalOverlay').classList.remove('active'); }
@@ -1604,6 +1610,7 @@ function initMemoryCarousel() {
 
     const slides = Array.from(carousel.querySelectorAll('[data-carousel-slide]'));
     const dots = Array.from(carousel.querySelectorAll('[data-carousel-dot]'));
+    const track = carousel.querySelector('.carousel-track');
     const prev = carousel.querySelector('[data-carousel-prev]');
     const next = carousel.querySelector('[data-carousel-next]');
     const count = carousel.querySelector('[data-carousel-count]');
@@ -1613,7 +1620,17 @@ function initMemoryCarousel() {
     let touchStartX = 0;
     let touchStartY = 0;
 
-    const setActive = nextIndex => {
+    const centerDotInTrack = (dot, behavior = 'smooth') => {
+      if (!track || !dot) return;
+      const left = dot.offsetLeft - (track.clientWidth / 2) + (dot.clientWidth / 2);
+      track.scrollTo({
+        left: Math.max(0, left),
+        behavior
+      });
+    };
+
+    const setActive = (nextIndex, options = {}) => {
+      const shouldCenterDot = options.centerDot !== false;
       activeIndex = (nextIndex + slides.length) % slides.length;
 
       slides.forEach((slide, index) => {
@@ -1629,8 +1646,8 @@ function initMemoryCarousel() {
         const isActive = index === activeIndex;
         dot.classList.toggle('is-active', isActive);
         dot.setAttribute('aria-current', isActive ? 'true' : 'false');
-        if (isActive) {
-          dot.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        if (isActive && shouldCenterDot) {
+          centerDotInTrack(dot, options.behavior || 'smooth');
         }
       });
 
@@ -1681,7 +1698,7 @@ function initMemoryCarousel() {
       }
     });
 
-    setActive(0);
+    setActive(0, { centerDot: false });
   });
 }
 
