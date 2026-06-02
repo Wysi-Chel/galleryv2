@@ -1155,7 +1155,7 @@
     <button class="modal-close" onclick="closeModal()">✕</button>
     <h3>Upload Photos</h3>
     <p class="sub">JPG, PNG, WEBP or GIF &nbsp;&middot;&nbsp; Max {{ max_file_size_mb }}MB per file ({{ max_request_size_mb }}MB total) &nbsp;&middot;&nbsp; Saved to {{ upload_storage_label }}</p>
-    <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
+    <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data" onsubmit="return false;">
       <input type="hidden" name="section" id="uploadSection" value="gallery" />
       <div class="form-group">
         <label>Caption</label>
@@ -1487,6 +1487,8 @@
   }
   const MAX_FILE_BYTES = {{ max_file_size_mb|int }} * 1024 * 1024;
   const MAX_BATCH_BYTES = {{ max_request_size_mb|int }} * 1024 * 1024;
+  const UPLOAD_COMPRESSION_TARGET_BYTES = Math.floor(MAX_FILE_BYTES * 0.86);
+  const UPLOAD_IMAGE_MAX_DIMENSION = 1800;
   const UPLOAD_BUTTON_LABEL = 'Upload photos';
 
   function showFileName(input) {
@@ -1504,23 +1506,62 @@
       return;
     }
     const files = Array.from(input.files);
-    const oversizedCount = files.filter(file => file.size > MAX_FILE_BYTES).length;
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-    if (oversizedCount > 0) {
-      const maxMb = Math.floor(MAX_FILE_BYTES / (1024 * 1024));
-      alert(`${oversizedCount} selected file(s) are too large. Each photo must be up to ${maxMb}MB.`);
-      input.value = '';
-      showFileName(input);
-      return;
-    }
     if (totalBytes > MAX_BATCH_BYTES) {
       const maxMb = Math.floor(MAX_BATCH_BYTES / (1024 * 1024));
-      alert(`Total upload is too large. Please keep the batch up to ${maxMb}MB.`);
-      input.value = '';
+      document.getElementById('fileChosen').textContent = `${files.length} files selected - will upload one by one`;
+    } else {
       showFileName(input);
-      return;
     }
-    showFileName(input);
+  }
+
+  function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(image);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Could not read image.'));
+      };
+      image.src = url;
+    });
+  }
+
+  function canvasToBlob(canvas, quality) {
+    return new Promise(resolve => {
+      canvas.toBlob(resolve, 'image/jpeg', quality);
+    });
+  }
+
+  async function compressImageForUpload(file) {
+    if (file.size <= UPLOAD_COMPRESSION_TARGET_BYTES) return file;
+    if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
+
+    const image = await loadImageFromFile(file);
+    const scale = Math.min(1, UPLOAD_IMAGE_MAX_DIMENSION / Math.max(image.width, image.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    let bestBlob = null;
+    for (const quality of [0.82, 0.74, 0.66, 0.58, 0.5, 0.42]) {
+      const blob = await canvasToBlob(canvas, quality);
+      if (!blob) continue;
+      bestBlob = blob;
+      if (blob.size <= UPLOAD_COMPRESSION_TARGET_BYTES) break;
+    }
+
+    if (!bestBlob || bestBlob.size >= file.size) return file;
+    const filename = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+    return new File([bestBlob], filename, { type: 'image/jpeg', lastModified: Date.now() });
   }
   const dz = document.getElementById('dropZone');
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
@@ -1532,60 +1573,59 @@
   const uploadForm = document.getElementById('uploadForm');
   if (uploadForm) {
     uploadForm.addEventListener('submit', async e => {
+      e.preventDefault();
       const input = document.getElementById('fileInput');
       if (!input || !input.files || !input.files.length) return;
       const files = Array.from(input.files);
-      const oversizedCount = files.filter(file => file.size > MAX_FILE_BYTES).length;
-      const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-      if (oversizedCount > 0) {
-        e.preventDefault();
-        const maxMb = Math.floor(MAX_FILE_BYTES / (1024 * 1024));
-        alert(`${oversizedCount} selected file(s) are too large. Each photo must be up to ${maxMb}MB.`);
-        return;
-      }
-      if (totalBytes > MAX_BATCH_BYTES) {
-        e.preventDefault();
-        const maxMb = Math.floor(MAX_BATCH_BYTES / (1024 * 1024));
-        alert(`Total upload is too large. Please keep the batch up to ${maxMb}MB.`);
-        return;
+
+      const submitBtn = uploadForm.querySelector('.btn-submit');
+      const originalLabel = submitBtn ? submitBtn.textContent : '';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Preparing...';
       }
 
-      if (files.length > 1) {
-        e.preventDefault();
+      const captionInput = uploadForm.querySelector('input[name="caption"]');
+      const sectionInput = uploadForm.querySelector('[name="section"]');
+      const caption = captionInput ? captionInput.value : '';
+      const section = sectionInput ? sectionInput.value : 'gallery';
 
-        const submitBtn = uploadForm.querySelector('.btn-submit');
-        const originalLabel = submitBtn ? submitBtn.textContent : '';
-        if (submitBtn) {
-          submitBtn.disabled = true;
-          submitBtn.textContent = 'Uploading...';
+      try {
+        for (let index = 0; index < files.length; index += 1) {
+          if (submitBtn) {
+            submitBtn.textContent = `Uploading ${index + 1}/${files.length}...`;
+          }
+
+          const file = await compressImageForUpload(files[index]);
+          if (file.size > MAX_FILE_BYTES) {
+            throw new Error(`${file.name} is still too large after compression.`);
+          }
+
+          const formData = new FormData();
+          formData.append('caption', caption);
+          formData.append('section', section);
+          formData.append('_async', '1');
+          formData.append('photo', file);
+
+          const resp = await fetch('/upload', {
+            method: 'POST',
+            headers: { 'X-Upload-Async': '1' },
+            body: formData
+          });
+          if (!resp.ok) {
+            const errorText = await resp.text().catch(() => '');
+            throw new Error(errorText || `Upload failed with status ${resp.status}`);
+          }
         }
 
-        const captionInput = uploadForm.querySelector('input[name="caption"]');
-        const sectionInput = uploadForm.querySelector('[name="section"]');
-        const caption = captionInput ? captionInput.value : '';
-        const section = sectionInput ? sectionInput.value : 'gallery';
-
-        try {
-          for (const file of files) {
-            const formData = new FormData();
-            formData.append('caption', caption);
-            formData.append('section', section);
-            formData.append('photo', file);
-
-            const resp = await fetch('/upload', { method: 'POST', body: formData });
-            if (!resp.ok) {
-              throw new Error(`Upload failed with status ${resp.status}`);
-            }
-          }
-          window.location.reload();
-        } catch (err) {
-          alert(`One or more uploads failed. Keep each file under ${Math.floor(MAX_FILE_BYTES / (1024 * 1024))}MB on this deployment.`);
-          console.error(err);
-        } finally {
-          if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = originalLabel || UPLOAD_BUTTON_LABEL;
-          }
+        window.location.href = '/';
+      } catch (err) {
+        alert(`Upload failed. Please choose a smaller photo or try one photo at a time. ${err.message || ''}`);
+        console.error(err);
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalLabel || UPLOAD_BUTTON_LABEL;
         }
       }
     });

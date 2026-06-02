@@ -6,7 +6,7 @@ import traceback
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
-from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory
+from flask import Flask, Response, render_template, request, redirect, url_for, flash, send_from_directory
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 import firebase_admin
@@ -26,12 +26,12 @@ app.jinja_env.auto_reload = True
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 RUNNING_ON_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
-DEFAULT_MAX_FILE_SIZE_MB = "4" if RUNNING_ON_VERCEL else "25"
+DEFAULT_MAX_FILE_SIZE_MB = "3" if RUNNING_ON_VERCEL else "25"
 DEFAULT_MAX_REQUEST_SIZE_MB = "4" if RUNNING_ON_VERCEL else "100"
 MAX_FILE_SIZE_MB = int(os.environ.get("MAX_FILE_SIZE_MB", DEFAULT_MAX_FILE_SIZE_MB))
 MAX_REQUEST_SIZE_MB = int(os.environ.get("MAX_REQUEST_SIZE_MB", DEFAULT_MAX_REQUEST_SIZE_MB))
 if RUNNING_ON_VERCEL:
-    MAX_FILE_SIZE_MB = min(MAX_FILE_SIZE_MB, 4)
+    MAX_FILE_SIZE_MB = min(MAX_FILE_SIZE_MB, 3)
     MAX_REQUEST_SIZE_MB = min(MAX_REQUEST_SIZE_MB, 4)
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 FIREBASE_REQUEST_TIMEOUT_SECONDS = int(os.environ.get("FIREBASE_REQUEST_TIMEOUT_SECONDS", "10"))
@@ -565,18 +565,25 @@ def upload():
     if request.method == "GET":
         return redirect(url_for("index"))
 
+    is_async_upload = request.headers.get("X-Upload-Async") == "1"
     try:
         local_backend = use_local_backend()
         current_db = None if local_backend else init_firebase()
         if not local_backend and current_db is None:
+            if is_async_upload:
+                return Response("Firebase is not configured.", status=503)
             flash("Firebase is not configured on this deployment yet.", "error")
             return redirect(url_for("index"))
         if not local_backend and not storage_ready():
+            if is_async_upload:
+                return Response("Firebase Storage is not configured.", status=503)
             flash("Firebase Storage is not configured on this deployment yet.", "error")
             return redirect(url_for("index"))
 
         files = [f for f in request.files.getlist("photo") if f and f.filename]
         if not files:
+            if is_async_upload:
+                return Response("No file selected.", status=400)
             flash("No file selected.", "error")
             return redirect(url_for("index"))
 
@@ -655,9 +662,26 @@ def upload():
         if not (uploaded_count or invalid_count or too_large_count or failed_count):
             flash("No file selected.", "error")
 
+        if is_async_upload:
+            if uploaded_count and not (invalid_count or too_large_count or failed_count):
+                return Response(status=204)
+            return Response("Upload failed.", status=400)
+
+    except RequestEntityTooLarge:
+        if is_async_upload:
+            return Response(
+                f"Upload payload too large. Maximum total size per upload is {MAX_REQUEST_SIZE_MB}MB.",
+                status=413,
+            )
+        flash(
+            f"Upload payload too large. Maximum total size per upload is {MAX_REQUEST_SIZE_MB}MB.",
+            "error"
+        )
     except Exception as e:
         print(f"UPLOAD ERROR: {e}")
         traceback.print_exc()
+        if is_async_upload:
+            return Response("Upload failed.", status=500)
         flash(f"Upload failed: {str(e)}", "error")
 
     return redirect(url_for("index"))
@@ -798,6 +822,11 @@ def delete(photo_id):
 
 @app.errorhandler(RequestEntityTooLarge)
 def handle_file_too_large(_error):
+    if request.headers.get("X-Upload-Async") == "1":
+        return Response(
+            f"Upload payload too large. Maximum total size per upload is {MAX_REQUEST_SIZE_MB}MB.",
+            status=413,
+        )
     flash(
         f"Upload payload too large. Maximum total size per upload is {MAX_REQUEST_SIZE_MB}MB.",
         "error"
@@ -812,5 +841,7 @@ def handle_unexpected_error(error):
 
     print(f"UNEXPECTED ERROR: {error}")
     traceback.print_exc()
+    if request.headers.get("X-Upload-Async") == "1":
+        return Response("Upload failed.", status=500)
     flash("Something went wrong. Try a smaller photo or check the deployment settings.", "error")
     return redirect(url_for("index"))
