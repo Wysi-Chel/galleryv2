@@ -3,15 +3,20 @@ import json
 import sqlite3
 import uuid
 import traceback
-from datetime import datetime, timedelta, timezone
-from urllib.parse import quote
+from datetime import datetime, timezone
 
 from flask import Flask, Response, render_template, request, redirect, url_for, flash, send_from_directory
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 import firebase_admin
-from firebase_admin import credentials, firestore, storage
+from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1 import FieldFilter
+
+try:
+    import cloudinary
+    import cloudinary.uploader
+except ImportError:
+    cloudinary = None
 
 # ── Flask ──
 app = Flask(
@@ -20,7 +25,7 @@ app = Flask(
     static_folder="../static",
     static_url_path="/static"
 )
-app.secret_key = os.environ.get("SECRET_KEY", "*qaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqa")
+app.secret_key = os.environ.get("SECRET_KEY") or "*qaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqaqa"
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 
@@ -43,13 +48,72 @@ LOCAL_DB_PATH = os.environ.get("SQLITE_PATH") or os.path.join(APP_ROOT, "data", 
 LOCAL_UPLOAD_DIR = os.environ.get("LOCAL_UPLOAD_DIR") or os.path.join(APP_ROOT, "static", "uploads")
 db = None
 firebase_init_error = None
-storage_bucket = None
-storage_init_error = None
-FIREBASE_STORAGE_BUCKET = (
-    os.environ.get("FIREBASE_STORAGE_BUCKET")
-    or os.environ.get("GOOGLE_CLOUD_STORAGE_BUCKET")
-    or ""
-).replace("gs://", "").strip().strip("/")
+cloudinary_configured = False
+cloudinary_init_error = None
+CLOUDINARY_UPLOAD_FOLDER = os.environ.get("CLOUDINARY_UPLOAD_FOLDER", "couple_gallery").strip().strip("/") or "couple_gallery"
+
+
+def parse_labeled_secret_line(line):
+    cleaned = line.strip()
+    lowered = cleaned.lower()
+    for label in ("cloud name", "api key", "api secret"):
+        if lowered.startswith(label):
+            return cleaned[len(label):].strip(" :=\t")
+    if ":" in line:
+        return line.split(":", 1)[1].strip()
+    return cleaned
+
+
+def load_local_cloudinary_settings():
+    path = os.path.join(APP_ROOT, "cloudinary.txt")
+    if not os.path.exists(path):
+        return {}
+
+    try:
+        lines = [
+            line.strip()
+            for line in open(path, encoding="utf-8").read().splitlines()
+            if line.strip()
+        ]
+    except Exception:
+        return {}
+
+    settings = {}
+    for line in lines:
+        if line.startswith("cloudinary://"):
+            settings["CLOUDINARY_URL"] = line
+        elif "=" in line:
+            key, value = line.split("=", 1)
+            settings[key.strip()] = value.strip()
+
+    # Support the local note format:
+    # Cloud Name / <cloud name> / API Key: <key> / API Secret: <secret>
+    if not settings and len(lines) >= 4 and lines[0].lower().replace(" ", "") == "cloudname":
+        settings["CLOUDINARY_CLOUD_NAME"] = lines[1].strip()
+        settings["CLOUDINARY_API_KEY"] = parse_labeled_secret_line(lines[2])
+        settings["CLOUDINARY_API_SECRET"] = parse_labeled_secret_line(lines[3])
+
+    return settings
+
+
+LOCAL_CLOUDINARY_SETTINGS = load_local_cloudinary_settings()
+
+
+def cloudinary_setting(name):
+    return os.environ.get(name) or LOCAL_CLOUDINARY_SETTINGS.get(name, "")
+
+
+CLOUDINARY_URL = cloudinary_setting("CLOUDINARY_URL").strip()
+CLOUDINARY_CLOUD_NAME = cloudinary_setting("CLOUDINARY_CLOUD_NAME").strip()
+CLOUDINARY_API_KEY = cloudinary_setting("CLOUDINARY_API_KEY").strip()
+CLOUDINARY_API_SECRET = cloudinary_setting("CLOUDINARY_API_SECRET").strip()
+
+
+def has_cloudinary_credentials():
+    return bool(
+        CLOUDINARY_URL
+        or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET)
+    )
 
 
 def use_local_backend():
@@ -57,11 +121,13 @@ def use_local_backend():
         return False
     database_backend = os.environ.get("DATABASE_BACKEND", "").strip().lower()
     storage_backend = os.environ.get("STORAGE_BACKEND", "").strip().lower()
-    return (
-        database_backend == "sqlite"
-        or storage_backend == "local"
-        or not FIREBASE_STORAGE_BUCKET
-    )
+    if database_backend == "sqlite" or storage_backend == "local":
+        return True
+    if storage_backend == "cloudinary":
+        return False
+    if cloudinary is None:
+        return True
+    return not has_cloudinary_credentials()
 
 
 def utc_now_iso():
@@ -72,7 +138,7 @@ def normalize_photo_section(section):
     return section if section in {"gallery", "featured", "scrapbook"} else "gallery"
 
 
-# Firebase handles both Firestore metadata and durable image storage.
+# Firebase handles Firestore metadata. Cloudinary handles durable image storage.
 def init_firebase():
     global db, firebase_init_error
 
@@ -94,13 +160,7 @@ def init_firebase():
                         "Missing Firebase credentials. Set GOOGLE_APPLICATION_CREDENTIALS_JSON in Vercel."
                     )
                 cred = credentials.Certificate(key_path)
-            if FIREBASE_STORAGE_BUCKET:
-                firebase_admin.initialize_app(
-                    cred,
-                    {"storageBucket": FIREBASE_STORAGE_BUCKET},
-                )
-            else:
-                firebase_admin.initialize_app(cred)
+            firebase_admin.initialize_app(cred)
 
         db = firestore.client()
         firebase_init_error = None
@@ -112,85 +172,125 @@ def init_firebase():
     return db
 
 
-def init_storage_bucket():
-    global storage_bucket, storage_init_error
+def init_cloudinary():
+    global cloudinary_configured, cloudinary_init_error
 
-    if storage_bucket is not None:
-        return storage_bucket
-
-    if init_firebase() is None:
-        storage_init_error = firebase_init_error or "Firebase is not configured."
-        return None
-    if not FIREBASE_STORAGE_BUCKET:
-        storage_init_error = (
-            "Missing FIREBASE_STORAGE_BUCKET. Use the bucket name from Firebase Storage "
-            "without gs://, for example your-project.firebasestorage.app."
+    if cloudinary_configured:
+        return True
+    if cloudinary is None:
+        cloudinary_init_error = "Missing Cloudinary package. Add cloudinary to requirements.txt."
+        return False
+    if not has_cloudinary_credentials():
+        cloudinary_init_error = (
+            "Missing Cloudinary credentials. Set CLOUDINARY_URL or "
+            "CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET."
         )
-        return None
+        return False
 
     try:
-        storage_bucket = storage.bucket(FIREBASE_STORAGE_BUCKET)
-        storage_init_error = None
-    except Exception as exc:
-        storage_init_error = str(exc)
-        storage_bucket = None
-        print(f"FIREBASE STORAGE INIT ERROR: {storage_init_error}")
+        if CLOUDINARY_URL and not os.environ.get("CLOUDINARY_URL"):
+            os.environ["CLOUDINARY_URL"] = CLOUDINARY_URL
 
-    return storage_bucket
+        if CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
+            cloudinary.config(
+                cloud_name=CLOUDINARY_CLOUD_NAME,
+                api_key=CLOUDINARY_API_KEY,
+                api_secret=CLOUDINARY_API_SECRET,
+                secure=True,
+            )
+        else:
+            cloudinary.config(secure=True)
+
+        config = cloudinary.config()
+        if not (config.cloud_name and config.api_key and config.api_secret):
+            raise RuntimeError("Cloudinary credentials are incomplete.")
+
+        cloudinary_configured = True
+        cloudinary_init_error = None
+        return True
+    except Exception as exc:
+        cloudinary_configured = False
+        cloudinary_init_error = str(exc)
+        print(f"CLOUDINARY INIT ERROR: {cloudinary_init_error}")
+        return False
 
 
 def storage_ready():
-    return init_storage_bucket() is not None
+    return init_cloudinary()
 
 
-def build_storage_url(storage_path):
-    return f"/uploads/{quote(storage_path, safe='/')}"
+def cloudinary_folder(section):
+    section = normalize_photo_section(section)
+    return f"{CLOUDINARY_UPLOAD_FOLDER}/{section}".strip("/")
 
 
-def upload_to_storage(file_storage, section="gallery"):
-    bucket = init_storage_bucket()
-    if bucket is None:
-        raise RuntimeError(storage_init_error or "Firebase Storage is not configured.")
+def friendly_upload_error(error):
+    message = str(error)
+    lowered = message.lower()
 
-    section = section if section in {"gallery", "featured", "scrapbook"} else "gallery"
+    if "cloudinary" in lowered and ("missing" in lowered or "incomplete" in lowered):
+        return (
+            "Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, "
+            "CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in Vercel."
+        )
+    if "must supply api_key" in lowered or "must supply api_secret" in lowered:
+        return "Cloudinary credentials are incomplete. Recheck the Vercel env vars."
+    if "401" in lowered or "unauthorized" in lowered or "invalid api" in lowered:
+        return "Cloudinary rejected the credentials. Recheck the API key and API secret."
+    if "permission" in lowered or "403" in lowered or "forbidden" in lowered:
+        return (
+            "Cloudinary permission denied. Check the Cloudinary account/API permissions."
+        )
+    if "credentials" in lowered or "private_key" in lowered or "invalid json" in lowered:
+        return (
+            "Firebase credentials are invalid. Recheck GOOGLE_APPLICATION_CREDENTIALS_JSON "
+            "in Vercel."
+        )
+    if "file size" in lowered or "too large" in lowered or "payload" in lowered:
+        return "Photo is too large for this upload. Try one smaller photo."
+    if "timeout" in lowered or "timed out" in lowered:
+        return "Cloudinary upload timed out. Try one smaller photo, then upload again."
+    if message:
+        return f"Upload failed: {message[:220]}"
+    return "Upload failed. Check the Vercel function logs for details."
+
+
+def upload_to_cloudinary(file_storage, section="gallery"):
+    if not init_cloudinary():
+        raise RuntimeError(cloudinary_init_error or "Cloudinary is not configured.")
+
     original_name = secure_filename(file_storage.filename or "photo")
-    extension = ""
-    if "." in original_name:
-        extension = "." + original_name.rsplit(".", 1)[1].lower()
-    filename = f"{uuid.uuid4().hex}{extension}"
-    storage_path = f"couple_gallery/{section}/{filename}"
-    blob = bucket.blob(storage_path)
-    content_type = file_storage.mimetype or "application/octet-stream"
-
     file_storage.stream.seek(0)
-    blob.upload_from_file(
+
+    result = cloudinary.uploader.upload(
         file_storage.stream,
-        content_type=content_type,
-        timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
-        retry=None,
+        folder=cloudinary_folder(section),
+        resource_type="image",
+        use_filename=bool(original_name),
+        filename_override=original_name or None,
+        unique_filename=True,
+        overwrite=False,
     )
+    public_id = result.get("public_id")
+    secure_url = result.get("secure_url") or result.get("url")
+    if not public_id or not secure_url:
+        raise RuntimeError("Cloudinary upload did not return a public URL.")
 
     return {
-        "url": build_storage_url(storage_path),
-        "storage_path": storage_path,
+        "url": secure_url,
+        "storage_path": public_id,
+        "public_id": public_id,
     }
 
 
-def delete_storage_object(storage_path):
-    if not storage_path:
-        return
-    bucket = init_storage_bucket()
-    if bucket is None:
-        print(f"FIREBASE STORAGE DELETE SKIPPED: {storage_init_error}")
+def delete_cloudinary_asset(public_id):
+    if not public_id or not init_cloudinary():
         return
     try:
-        bucket.blob(storage_path).delete(
-            timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
-            retry=None,
-        )
+        cloudinary.uploader.destroy(public_id, resource_type="image", invalidate=True)
     except Exception as exc:
-        # Keep Firestore cleanup successful even if a stale object is already gone.
-        print(f"FIREBASE STORAGE DELETE WARNING: {exc}")
+        # Keep Firestore cleanup successful even if an old asset is already gone.
+        print(f"CLOUDINARY DELETE WARNING: {exc}")
 
 
 def local_connect():
@@ -373,6 +473,7 @@ def upload_to_local(file_storage, section="gallery"):
     return {
         "url": f"/static/uploads/{filename}",
         "storage_path": filename,
+        "public_id": filename,
     }
 
 
@@ -413,7 +514,7 @@ def index():
     if not local_backend and current_db is None:
         warnings.append(firebase_init_error or "Firebase is not configured.")
     if not local_backend and not current_storage_ready:
-        warnings.append(storage_init_error or "Firebase Storage is not configured.")
+        warnings.append(cloudinary_init_error or "Cloudinary is not configured.")
 
     try:
         if local_backend:
@@ -503,12 +604,12 @@ def index():
         firebase_ready=current_db is not None,
         firebase_error=firebase_init_error,
         cloud_storage_ready=current_storage_ready,
-        storage_error=storage_init_error,
+        storage_error=cloudinary_init_error,
         warnings=warnings,
         running_on_vercel=RUNNING_ON_VERCEL,
         upload_storage_label=(
             "this computer" if local_backend
-            else "Firebase Storage" if current_storage_ready
+            else "Cloudinary" if current_storage_ready
             else "cloud storage not configured"
         ),
         total_photos=total_photos,
@@ -529,25 +630,7 @@ def favicon():
 
 @app.route("/uploads/<path:storage_path>")
 def uploaded_file(storage_path):
-    bucket = init_storage_bucket()
-    if bucket is None:
-        return "Firebase Storage is not configured.", 404
-
-    storage_path = storage_path.strip().lstrip("/")
-    if not storage_path.startswith("couple_gallery/"):
-        return "File not found.", 404
-
-    blob = bucket.blob(storage_path)
-    try:
-        signed_url = blob.generate_signed_url(
-            expiration=timedelta(minutes=15),
-            method="GET",
-        )
-    except Exception as exc:
-        print(f"FIREBASE STORAGE SIGNED URL ERROR: {exc}")
-        return "File could not be loaded.", 404
-
-    return redirect(signed_url)
+    return "Legacy Firebase Storage uploads are no longer used. New photos are served by Cloudinary.", 404
 
 
 @app.after_request
@@ -571,13 +654,19 @@ def upload():
         current_db = None if local_backend else init_firebase()
         if not local_backend and current_db is None:
             if is_async_upload:
-                return Response("Firebase is not configured.", status=503)
+                return Response(
+                    friendly_upload_error(firebase_init_error or "Firebase is not configured."),
+                    status=503,
+                )
             flash("Firebase is not configured on this deployment yet.", "error")
             return redirect(url_for("index"))
         if not local_backend and not storage_ready():
             if is_async_upload:
-                return Response("Firebase Storage is not configured.", status=503)
-            flash("Firebase Storage is not configured on this deployment yet.", "error")
+                return Response(
+                    friendly_upload_error(cloudinary_init_error or "Cloudinary is not configured."),
+                    status=503,
+                )
+            flash("Cloudinary is not configured on this deployment yet.", "error")
             return redirect(url_for("index"))
 
         files = [f for f in request.files.getlist("photo") if f and f.filename]
@@ -593,6 +682,7 @@ def upload():
         invalid_count = 0
         too_large_count = 0
         failed_count = 0
+        failure_messages = []
 
         for file in files:
             if not allowed_file(file.filename):
@@ -609,14 +699,14 @@ def upload():
                 result = (
                     upload_to_local(file, section)
                     if local_backend
-                    else upload_to_storage(file, section)
+                    else upload_to_cloudinary(file, section)
                 )
 
                 photo_payload = {
                     "id": uuid.uuid4().hex,
                     "url": result["url"],
                     "storage_path": result["storage_path"],
-                    "public_id": result["storage_path"],
+                    "public_id": result.get("public_id") or result["storage_path"],
                     "caption": caption,
                     "section": section,
                     "uploaded_at": utc_now_iso(),
@@ -630,7 +720,7 @@ def upload():
                         {
                             "url": result["url"],
                             "storage_path": result["storage_path"],
-                            "public_id": result["storage_path"],
+                            "public_id": result.get("public_id") or result["storage_path"],
                             "caption": caption,
                             "section": section,
                             "uploaded_at": firestore.SERVER_TIMESTAMP,
@@ -644,9 +734,31 @@ def upload():
                     if local_backend:
                         delete_local_asset(result.get("storage_path"))
                     else:
-                        delete_storage_object(result.get("storage_path"))
+                        delete_cloudinary_asset(result.get("public_id") or result.get("storage_path"))
+                friendly_error = friendly_upload_error(upload_err)
+                failure_messages.append(friendly_error)
                 print(f"SINGLE UPLOAD ERROR: {upload_err}")
                 failed_count += 1
+
+        if is_async_upload:
+            if uploaded_count and not (invalid_count or too_large_count or failed_count):
+                return Response(status=204)
+            if too_large_count:
+                return Response(
+                    f"Photo is still too large after compression. Max size is {MAX_FILE_SIZE_MB}MB.",
+                    status=413,
+                )
+            if invalid_count:
+                return Response(
+                    "Invalid file type. Please upload JPG, PNG, WEBP, or GIF.",
+                    status=400,
+                )
+            if failed_count:
+                return Response(
+                    failure_messages[0] if failure_messages else "Upload failed.",
+                    status=500,
+                )
+            return Response("No file selected.", status=400)
 
         if uploaded_count:
             flash(f"{uploaded_count} photo(s) uploaded!", "success")
@@ -662,11 +774,6 @@ def upload():
         if not (uploaded_count or invalid_count or too_large_count or failed_count):
             flash("No file selected.", "error")
 
-        if is_async_upload:
-            if uploaded_count and not (invalid_count or too_large_count or failed_count):
-                return Response(status=204)
-            return Response("Upload failed.", status=400)
-
     except RequestEntityTooLarge:
         if is_async_upload:
             return Response(
@@ -681,7 +788,7 @@ def upload():
         print(f"UPLOAD ERROR: {e}")
         traceback.print_exc()
         if is_async_upload:
-            return Response("Upload failed.", status=500)
+            return Response(friendly_upload_error(e), status=500)
         flash(f"Upload failed: {str(e)}", "error")
 
     return redirect(url_for("index"))
@@ -697,7 +804,7 @@ def replace(photo_id):
             flash("Firebase is not configured on this deployment yet.", "error")
             return redirect(url_for("index"))
         if not local_backend and not storage_ready():
-            flash("Firebase Storage is not configured on this deployment yet.", "error")
+            flash("Cloudinary is not configured on this deployment yet.", "error")
             return redirect(url_for("index"))
 
         if "photo" not in request.files:
@@ -739,7 +846,7 @@ def replace(photo_id):
         result = (
             upload_to_local(file, section)
             if local_backend
-            else upload_to_storage(file, section)
+            else upload_to_cloudinary(file, section)
         )
 
         if local_backend:
@@ -748,7 +855,7 @@ def replace(photo_id):
                 {
                     "url": result["url"],
                     "storage_path": result["storage_path"],
-                    "public_id": result["storage_path"],
+                    "public_id": result.get("public_id") or result["storage_path"],
                     "updated_at": utc_now_iso(),
                     "uploaded_at": utc_now_iso(),
                 },
@@ -758,17 +865,17 @@ def replace(photo_id):
                 {
                     "url": result["url"],
                     "storage_path": result["storage_path"],
-                    "public_id": result["storage_path"],
+                    "public_id": result.get("public_id") or result["storage_path"],
                     "uploaded_at": firestore.SERVER_TIMESTAMP,
                 },
                 retry=None,
                 timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
             )
-        old_storage_path = data.get("storage_path") or data.get("public_id")
+        old_storage_path = data.get("public_id") or data.get("storage_path")
         if local_backend:
             delete_local_asset(old_storage_path)
         else:
-            delete_storage_object(old_storage_path)
+            delete_cloudinary_asset(old_storage_path)
 
         flash("Featured photo replaced.", "success")
     except Exception as e:
@@ -776,7 +883,7 @@ def replace(photo_id):
             if local_backend:
                 delete_local_asset(result.get("storage_path"))
             else:
-                delete_storage_object(result.get("storage_path"))
+                delete_cloudinary_asset(result.get("public_id") or result.get("storage_path"))
         print(f"REPLACE ERROR: {e}")
         traceback.print_exc()
         flash(f"Replace failed: {str(e)}", "error")
@@ -807,7 +914,7 @@ def delete(photo_id):
             if not doc.exists:
                 return redirect(url_for("index"))
             data = doc.to_dict()
-            delete_storage_object(data.get("storage_path") or data.get("public_id"))
+            delete_cloudinary_asset(data.get("public_id") or data.get("storage_path"))
             current_db.collection("photos").document(photo_id).delete(
                 retry=None,
                 timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS

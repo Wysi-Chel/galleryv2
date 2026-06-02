@@ -1,4 +1,4 @@
 flask
 werkzeug
 firebase-admin
-google-cloud-storage
+cloudinary
