@@ -4,6 +4,11 @@ cloudinary.txt
 __pycache__/
 flask.err.log
 flask.out.log
+run-local*.log
+codex-flask*.log
 gallery/
+data/*.db
+static/uploads/*
+!static/uploads/.gitkeep
 
 .vercel

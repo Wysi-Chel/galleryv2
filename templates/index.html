@@ -524,14 +524,11 @@
     </div>
   {% endif %}
 {% endwith %}
-{% if not firebase_ready or not cloudinary_ready %}
+{% if warnings %}
   <div class="setup-banner">
-    {% if not firebase_ready %}
-      <div>Firebase is not configured for this deployment yet. {% if firebase_error %}{{ firebase_error }}{% endif %}</div>
-    {% endif %}
-    {% if not cloudinary_ready %}
-      <div>Cloudinary environment variables are missing on this deployment.</div>
-    {% endif %}
+    {% for warning in warnings %}
+      <div>{{ warning }}</div>
+    {% endfor %}
   </div>
 {% endif %}
 
@@ -540,7 +537,7 @@
   <div class="modal">
     <button class="modal-close" onclick="closeModal()">✕</button>
     <h3>Upload Photos</h3>
-    <p class="sub">JPG, PNG, WEBP or GIF &nbsp;·&nbsp; Max 25MB per file (100MB total) &nbsp;·&nbsp; Saved to Cloudinary</p>
+    <p class="sub">JPG, PNG, WEBP or GIF &nbsp;&middot;&nbsp; Max {{ max_file_size_mb }}MB per file ({{ max_request_size_mb }}MB total) &nbsp;&middot;&nbsp; Saved to {{ upload_storage_label }}</p>
     <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
       <div class="form-group">
         <label>Caption</label>
@@ -562,7 +559,15 @@
           <p class="file-chosen" id="fileChosen"></p>
         </div>
       </div>
-      <button type="submit" class="btn-submit">Upload to Cloudinary</button>
+      <button type="submit" class="btn-submit">
+        {% if media_is_cloud %}
+          Upload to Cloudinary
+        {% elif running_on_vercel %}
+          Save temporarily
+        {% else %}
+          Save to this computer
+        {% endif %}
+      </button>
     </form>
   </div>
 </div>
@@ -708,8 +713,13 @@
   function closeGalleryCollageOutside(e) {
     if (e.target === document.getElementById('galleryCollageModal')) closeGalleryCollage();
   }
-  const MAX_FILE_BYTES = 25 * 1024 * 1024;
-  const MAX_BATCH_BYTES = 100 * 1024 * 1024;
+  const MAX_FILE_BYTES = {{ max_file_size_mb|int }} * 1024 * 1024;
+  const MAX_BATCH_BYTES = {{ max_request_size_mb|int }} * 1024 * 1024;
+  const UPLOAD_BUTTON_LABEL = {{ (
+    'Upload to Cloudinary' if media_is_cloud else (
+      'Save temporarily' if running_on_vercel else 'Save to this computer'
+    )
+  )|tojson }};
 
   function showFileName(input) {
     const chosen = document.getElementById('fileChosen');
@@ -821,12 +831,12 @@
           }
           window.location.reload();
         } catch (err) {
-          alert('One or more uploads failed. If you are on Vercel, each file must stay under 4.5MB.');
+          alert(`One or more uploads failed. Keep each file under ${Math.floor(MAX_FILE_BYTES / (1024 * 1024))}MB on this deployment.`);
           console.error(err);
         } finally {
           if (submitBtn) {
             submitBtn.disabled = false;
-            submitBtn.textContent = originalLabel || 'Upload to Cloudinary';
+            submitBtn.textContent = originalLabel || UPLOAD_BUTTON_LABEL;
           }
         }
       }
