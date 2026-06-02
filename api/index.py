@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory
 from werkzeug.utils import secure_filename
-from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from google.cloud.firestore_v1 import FieldFilter
@@ -25,8 +25,14 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
-MAX_FILE_SIZE_MB = int(os.environ.get("MAX_FILE_SIZE_MB", "25"))
-MAX_REQUEST_SIZE_MB = int(os.environ.get("MAX_REQUEST_SIZE_MB", "100"))
+RUNNING_ON_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
+DEFAULT_MAX_FILE_SIZE_MB = "4" if RUNNING_ON_VERCEL else "25"
+DEFAULT_MAX_REQUEST_SIZE_MB = "4" if RUNNING_ON_VERCEL else "100"
+MAX_FILE_SIZE_MB = int(os.environ.get("MAX_FILE_SIZE_MB", DEFAULT_MAX_FILE_SIZE_MB))
+MAX_REQUEST_SIZE_MB = int(os.environ.get("MAX_REQUEST_SIZE_MB", DEFAULT_MAX_REQUEST_SIZE_MB))
+if RUNNING_ON_VERCEL:
+    MAX_FILE_SIZE_MB = min(MAX_FILE_SIZE_MB, 4)
+    MAX_REQUEST_SIZE_MB = min(MAX_REQUEST_SIZE_MB, 4)
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 FIREBASE_REQUEST_TIMEOUT_SECONDS = int(os.environ.get("FIREBASE_REQUEST_TIMEOUT_SECONDS", "10"))
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_SIZE_MB * 1024 * 1024
@@ -39,7 +45,6 @@ db = None
 firebase_init_error = None
 storage_bucket = None
 storage_init_error = None
-RUNNING_ON_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
 FIREBASE_STORAGE_BUCKET = (
     os.environ.get("FIREBASE_STORAGE_BUCKET")
     or os.environ.get("GOOGLE_CLOUD_STORAGE_BUCKET")
@@ -158,7 +163,12 @@ def upload_to_storage(file_storage, section="gallery"):
     content_type = file_storage.mimetype or "application/octet-stream"
 
     file_storage.stream.seek(0)
-    blob.upload_from_file(file_storage.stream, content_type=content_type)
+    blob.upload_from_file(
+        file_storage.stream,
+        content_type=content_type,
+        timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+        retry=None,
+    )
 
     return {
         "url": build_storage_url(storage_path),
@@ -174,7 +184,10 @@ def delete_storage_object(storage_path):
         print(f"FIREBASE STORAGE DELETE SKIPPED: {storage_init_error}")
         return
     try:
-        bucket.blob(storage_path).delete()
+        bucket.blob(storage_path).delete(
+            timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+            retry=None,
+        )
     except Exception as exc:
         # Keep Firestore cleanup successful even if a stale object is already gone.
         print(f"FIREBASE STORAGE DELETE WARNING: {exc}")
@@ -547,8 +560,11 @@ def add_no_cache_headers(response):
     return response
 
 
-@app.route("/upload", methods=["POST"])
+@app.route("/upload", methods=["GET", "POST"])
 def upload():
+    if request.method == "GET":
+        return redirect(url_for("index"))
+
     try:
         local_backend = use_local_backend()
         current_db = None if local_backend else init_firebase()
@@ -786,4 +802,15 @@ def handle_file_too_large(_error):
         f"Upload payload too large. Maximum total size per upload is {MAX_REQUEST_SIZE_MB}MB.",
         "error"
     )
+    return redirect(url_for("index"))
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(error):
+    if isinstance(error, HTTPException) and error.code != 500:
+        return error
+
+    print(f"UNEXPECTED ERROR: {error}")
+    traceback.print_exc()
+    flash("Something went wrong. Try a smaller photo or check the deployment settings.", "error")
     return redirect(url_for("index"))
