@@ -72,14 +72,17 @@
     .modal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.82); display: flex; align-items: center; justify-content: center; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.3s, visibility 0.3s; backdrop-filter: blur(6px); }
     .modal-overlay.active { opacity: 1; visibility: visible; pointer-events: all; }
     .modal { background: var(--surface); border: 1px solid rgba(78,205,196,0.18); width: min(480px, 92vw); padding: 2.5rem; position: relative; }
+    #newScrapbookPageOverlay { z-index: 280; }
     .modal h3 { font-family: 'Cormorant Garamond', serif; font-size: 1.6rem; font-weight: 300; color: var(--text-primary); margin-bottom: 0.4rem; }
     .modal p.sub { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 2rem; }
     .modal-close { position: absolute; top: 1rem; right: 1.2rem; background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; transition: color 0.2s; }
     .modal-close:hover { color: var(--accent); }
+    .modal-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
     .form-group { margin-bottom: 1.3rem; }
     .form-group label { display: block; font-size: 0.65rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; }
-    .form-group input[type="text"], .form-group select { width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary); padding: 0.7rem 0.9rem; font-family: 'Inter', sans-serif; font-size: 0.82rem; font-weight: 300; outline: none; transition: border-color 0.2s; }
-    .form-group input[type="text"]:focus, .form-group select:focus { border-color: var(--accent); }
+    .form-group input[type="text"], .form-group select, .form-group textarea { width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary); padding: 0.7rem 0.9rem; font-family: 'Inter', sans-serif; font-size: 0.82rem; font-weight: 300; outline: none; transition: border-color 0.2s; }
+    .form-group textarea { min-height: 6.2rem; resize: vertical; line-height: 1.55; }
+    .form-group input[type="text"]:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--accent); }
     .upload-target { margin: -0.4rem 0 1.2rem; color: var(--accent-3); font-size: 0.64rem; letter-spacing: 0.22em; text-transform: uppercase; }
     .drop-zone { border: 1.5px dashed rgba(78,205,196,0.22); padding: 2.5rem 1rem; text-align: center; cursor: pointer; transition: background 0.25s, border-color 0.25s; position: relative; }
     .drop-zone:hover, .drop-zone.dragover { background: var(--accent-soft); border-color: var(--accent); }
@@ -630,6 +633,7 @@
       flex-wrap: wrap;
       margin: -0.6rem 0 2rem;
     }
+    .story-actions form { margin: 0; }
     .scrapbook-trigger,
     .scrapbook-upload-btn,
     .scrapbook-close,
@@ -982,6 +986,35 @@
     }
     .scrapbook-photo { cursor: pointer; }
     .scrapbook-photo:nth-child(2) { --photo-tilt: 4deg; }
+    .scrapbook-photo form,
+    .scrapbook-pocket-photo form {
+      position: absolute;
+      top: 0.35rem;
+      right: 0.35rem;
+      margin: 0;
+      z-index: 2;
+    }
+    .scrapbook-photo .delete-btn,
+    .scrapbook-pocket-photo .delete-btn {
+      position: static;
+      opacity: 1;
+      border: 1px solid rgba(255,107,107,0.18);
+      background: rgba(8,15,15,0.74);
+      color: rgba(255,210,210,0.84);
+      padding: 0.24rem 0.45rem;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.5rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+    }
+    .scrapbook-photo .delete-btn:hover,
+    .scrapbook-pocket-photo .delete-btn:hover {
+      color: #ffb6b6;
+      border-color: rgba(255,107,107,0.38);
+      background: rgba(60,10,10,0.82);
+    }
     .scrapbook-photo img {
       width: 100%;
       height: 100%;
@@ -1128,6 +1161,7 @@
       .scrapbook-book {
         grid-template-columns: 1fr;
       }
+      .modal-form-grid { grid-template-columns: 1fr; }
       .scrapbook-editor-grid { grid-template-columns: 1fr; }
       .story-number { font-size: 2.2rem; }
       .scrapbook-overlay { padding: 0.8rem; }
@@ -1256,6 +1290,47 @@
   </div>
 </div>
 
+<!-- NEW SCRAPBOOK PAGE MODAL -->
+<div class="modal-overlay" id="newScrapbookPageOverlay" onclick="closeNewScrapbookPageOutside(event)">
+  <div class="modal">
+    <button class="modal-close" type="button" onclick="closeNewScrapbookPageModal()">x</button>
+    <h3>New Scrapbook Page</h3>
+    <p class="sub">Create the next moment first, then the uploader will open so those photos stay attached to this exact scrapbook page.</p>
+    <form method="POST" action="{{ url_for('create_scrapbook_page') }}">
+      <input type="hidden" name="edit_key" value="{{ scrapbook_edit_value }}" />
+      <div class="modal-form-grid">
+        <div class="form-group">
+          <label>Page date</label>
+          <input type="text" name="page_date" maxlength="120" placeholder="e.g. June 3, 2026" required />
+        </div>
+        <div class="form-group">
+          <label>Page title</label>
+          <input type="text" name="page_title" maxlength="120" placeholder="e.g. Another favorite day" required />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Page note</label>
+        <textarea name="page_note" maxlength="800" placeholder="A short note for this scrapbook page."></textarea>
+      </div>
+      <div class="modal-form-grid">
+        <div class="form-group">
+          <label>Story label</label>
+          <input type="text" name="story_title" maxlength="120" placeholder="e.g. The Weekend" required />
+        </div>
+        <div class="form-group">
+          <label>Story headline</label>
+          <input type="text" name="story_event" maxlength="180" placeholder="e.g. We made another memory." required />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Story note</label>
+        <textarea name="story_note" maxlength="800" placeholder="What made this moment worth saving?"></textarea>
+      </div>
+      <button type="submit" class="btn-submit">Save page and upload photos</button>
+    </form>
+  </div>
+</div>
+
 <!-- MEMORIES -->
 <section class="gallery-section" id="memories">
   <div class="gallery-shell">
@@ -1295,9 +1370,10 @@
                   >
                     View full photo
                   </button>
-                  {% if site_manage_mode %}
+                  {% if site_manage_mode and (photo.can_delete is not defined or photo.can_delete) %}
                     <form method="POST" action="/delete/{{ photo.id }}" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
                       <input type="hidden" name="manage_key" value="{{ site_manage_value }}" />
+                      <input type="hidden" name="source_namespace" value="{{ photo.source_namespace or '' }}" />
                       <button type="submit" class="delete-btn">Delete</button>
                     </form>
                   {% endif %}
@@ -1357,6 +1433,12 @@
       {% if site_manage_mode %}
         <button type="button" class="scrapbook-upload-btn" onclick="openModal('scrapbook')">Attach photos</button>
       {% endif %}
+      {% if running_on_vercel and scrapbook_edit_is_public and site_manage_mode %}
+        <form method="POST" action="/promote-to-live" onsubmit="return confirm('Promote the staged test changes to the live site? This will copy staged photos and scrapbook edits to live.');">
+          <input type="hidden" name="manage_key" value="{{ site_manage_value }}" />
+          <button type="submit" class="scrapbook-upload-btn">Promote to live</button>
+        </form>
+      {% endif %}
       {% if scrapbook_edit_mode %}
         <a class="scrapbook-upload-btn" href="{{ url_for('index', _anchor='story') }}">Done editing</a>
       {% elif scrapbook_edit_is_public %}
@@ -1389,7 +1471,7 @@
       <div>
         <p class="scrapbook-kicker">little keepsake album</p>
         <h3 id="scrapbookTitle">Our scrapbook pages</h3>
-        <p>Attach your favorite photos through the upload button, then they will show up here like taped-in memories.</p>
+        <p>Create a page for each new moment, then attach photos so every memory stays on its own scrapbook spread.</p>
       </div>
       <button type="button" class="scrapbook-close" onclick="closeScrapbook()" aria-label="Close scrapbook">x</button>
     </div>
@@ -1439,6 +1521,13 @@
           <div class="scrapbook-photo-stack">
             {% for photo in page_photos %}
               <div class="scrapbook-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
+                {% if site_manage_mode and (photo.can_delete is not defined or photo.can_delete) %}
+                  <form method="POST" action="/delete/{{ photo.id }}" onclick="event.stopPropagation()" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
+                    <input type="hidden" name="manage_key" value="{{ site_manage_value }}" />
+                    <input type="hidden" name="source_namespace" value="{{ photo.source_namespace or '' }}" />
+                    <button type="submit" class="delete-btn">Delete</button>
+                  </form>
+                {% endif %}
                 <img src="{{ photo.url }}" alt="{{ photo.caption or ('Scrapbook photo ' ~ loop.index) }}" loading="lazy" />
               </div>
             {% endfor %}
@@ -1459,6 +1548,13 @@
         <div class="scrapbook-pocket-strip">
           {% for photo in scrapbook_photos %}
             <div class="scrapbook-pocket-photo" data-url="{{ photo.url }}" data-caption="{{ photo.caption or 'A scrapbook memory.' }}">
+              {% if site_manage_mode and (photo.can_delete is not defined or photo.can_delete) %}
+                <form method="POST" action="/delete/{{ photo.id }}" onclick="event.stopPropagation()" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
+                  <input type="hidden" name="manage_key" value="{{ site_manage_value }}" />
+                  <input type="hidden" name="source_namespace" value="{{ photo.source_namespace or '' }}" />
+                  <button type="submit" class="delete-btn">Delete</button>
+                </form>
+              {% endif %}
               <img src="{{ photo.url }}" alt="{{ photo.caption or ('Attached scrapbook photo ' ~ loop.index) }}" loading="lazy" />
             </div>
           {% endfor %}
@@ -1519,11 +1615,25 @@
     }
   }
   function openModal(section = 'gallery', pageId = '') {
+    closeNewScrapbookPageModal();
     setUploadSection(section, pageId);
     document.getElementById('modalOverlay').classList.add('active');
   }
   function closeModal() { document.getElementById('modalOverlay').classList.remove('active'); }
   function closeModalOutside(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+  function openNewScrapbookPageModal() {
+    const overlay = document.getElementById('newScrapbookPageOverlay');
+    if (!overlay) return;
+    overlay.classList.add('active');
+  }
+  function closeNewScrapbookPageModal() {
+    const overlay = document.getElementById('newScrapbookPageOverlay');
+    if (!overlay) return;
+    overlay.classList.remove('active');
+  }
+  function closeNewScrapbookPageOutside(e) {
+    if (e.target === document.getElementById('newScrapbookPageOverlay')) closeNewScrapbookPageModal();
+  }
   function openGalleryCollage() {
     const modal = document.getElementById('galleryCollageModal');
     if (!modal) return;
@@ -1553,11 +1663,23 @@
     if (e.target === document.getElementById('scrapbookOverlay')) closeScrapbook();
   }
   function openScrapbookUpload(pageId = '') {
+    if (!pageId) {
+      openNewScrapbookPageModal();
+      return;
+    }
     closeScrapbook();
     openModal('scrapbook', pageId);
   }
   function openScrapbookFromUrl() {
     const params = new URLSearchParams(window.location.search);
+    const uploadPageId = params.get('upload_scrapbook_page') || '';
+    if (uploadPageId) {
+      requestAnimationFrame(() => openModal('scrapbook', uploadPageId));
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete('upload_scrapbook_page');
+      window.history.replaceState({}, '', nextUrl.toString());
+      return;
+    }
     if (params.get('scrapbook') !== '1') return;
     requestAnimationFrame(openScrapbook);
   }
@@ -1709,9 +1831,11 @@
         const nextUrl = new URL(window.location.href);
         if (section === 'scrapbook') {
           nextUrl.searchParams.set('scrapbook', '1');
+          nextUrl.searchParams.delete('upload_scrapbook_page');
           nextUrl.hash = 'story';
         } else {
           nextUrl.searchParams.delete('scrapbook');
+          nextUrl.searchParams.delete('upload_scrapbook_page');
           nextUrl.hash = '';
         }
         window.location.href = nextUrl.toString();
@@ -1733,7 +1857,7 @@
   }
   function closeLightbox() { document.getElementById('lightbox').classList.remove('active'); }
   document.getElementById('lightbox').addEventListener('click', function(e) { if (e.target === this) closeLightbox(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLightbox(); closeModal(); closeGalleryCollage(); closeScrapbook(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLightbox(); closeModal(); closeNewScrapbookPageModal(); closeGalleryCollage(); closeScrapbook(); } });
   setTimeout(() => {
     document.querySelectorAll('.flash').forEach(el => {
       el.style.transition = 'opacity 0.5s';

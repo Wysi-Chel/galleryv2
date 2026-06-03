@@ -123,6 +123,10 @@ SITE_DATA_NAMESPACE = (
     .strip("_")
 )
 SITE_MODE = (os.environ.get("SITE_MODE") or "").strip().lower()
+LIVE_CLOUDINARY_UPLOAD_FOLDER = (
+    os.environ.get("LIVE_CLOUDINARY_UPLOAD_FOLDER", "couple_gallery").strip().strip("/")
+    or "couple_gallery"
+)
 
 
 def has_cloudinary_credentials():
@@ -187,10 +191,15 @@ def redirect_to_index(**params):
     return redirect(url_for("index", **merged))
 
 
-def firestore_collection_name(base_name):
-    if SITE_DATA_NAMESPACE:
-        return f"{SITE_DATA_NAMESPACE}_{base_name}"
+def collection_name_for(base_name, namespace=None):
+    current_namespace = (SITE_DATA_NAMESPACE if namespace is None else namespace or "").strip("_")
+    if current_namespace:
+        return f"{current_namespace}_{base_name}"
     return base_name
+
+
+def firestore_collection_name(base_name):
+    return collection_name_for(base_name, SITE_DATA_NAMESPACE)
 
 
 DEFAULT_SCRAPBOOK_PAGES = [
@@ -248,11 +257,24 @@ SCRAPBOOK_PAGE_FIELDS = (
     "page_title",
     "page_note",
 )
+CUSTOM_SCRAPBOOK_PAGE_PREFIX = "custom-page-"
+
+
+def scrapbook_page_id_is_valid(page_id):
+    normalized = (page_id or "").strip()
+    if not normalized:
+        return False
+    if normalized in SCRAPBOOK_PAGE_IDS:
+        return True
+    if not normalized.startswith(CUSTOM_SCRAPBOOK_PAGE_PREFIX):
+        return False
+    suffix = normalized[len(CUSTOM_SCRAPBOOK_PAGE_PREFIX):]
+    return bool(suffix) and all(char.isalnum() or char == "-" for char in suffix)
 
 
 def normalize_scrapbook_page_id(page_id):
     normalized = (page_id or "").strip()
-    return normalized if normalized in SCRAPBOOK_PAGE_IDS else ""
+    return normalized if scrapbook_page_id_is_valid(normalized) else ""
 
 
 def sanitize_text(value, max_length=500):
@@ -264,22 +286,133 @@ def scrapbook_page_defaults():
     return [dict(page) for page in DEFAULT_SCRAPBOOK_PAGES]
 
 
+def scrapbook_field_limit(field_name):
+    if field_name == "story_event":
+        return 180
+    if field_name.endswith("_note"):
+        return 800
+    return 120
+
+
+def scrapbook_page_sort_key(page):
+    value = (
+        page.get("created_at")
+        or page.get("updated_at")
+        or ""
+    )
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
+    return str(value)
+
+
+def finalize_scrapbook_pages(pages):
+    finalized = []
+    for index, page in enumerate(pages or [], start=1):
+        current = dict(page)
+        current["number"] = f"{index:02d}"
+        current["is_core"] = bool(current.get("is_core"))
+        current["is_custom"] = current.get("id") not in SCRAPBOOK_PAGE_IDS
+        finalized.append(current)
+    return finalized
+
+
+def build_custom_scrapbook_page(saved_page):
+    page_id = normalize_scrapbook_page_id(saved_page.get("id"))
+    if not page_id or page_id in SCRAPBOOK_PAGE_IDS:
+        return None
+
+    page = {
+        "id": page_id,
+        "story_title": sanitize_text(saved_page.get("story_title"), 120) or "Another chapter",
+        "story_event": sanitize_text(saved_page.get("story_event"), 180) or "A new moment worth keeping.",
+        "story_note": sanitize_text(saved_page.get("story_note"), 800),
+        "page_date": sanitize_text(saved_page.get("page_date"), 120),
+        "page_title": sanitize_text(saved_page.get("page_title"), 120) or "New scrapbook page",
+        "page_note": sanitize_text(saved_page.get("page_note"), 800),
+        "is_core": False,
+        "created_at": saved_page.get("created_at") or saved_page.get("updated_at") or utc_now_iso(),
+        "updated_at": saved_page.get("updated_at") or saved_page.get("created_at") or utc_now_iso(),
+    }
+    return page
+
+
+def merge_scrapbook_page_values(base_page, saved_page):
+    merged = dict(base_page)
+    for field in SCRAPBOOK_PAGE_FIELDS:
+        value = sanitize_text(saved_page.get(field), scrapbook_field_limit(field))
+        if value:
+            merged[field] = value
+    if saved_page.get("created_at") and not merged.get("created_at"):
+        merged["created_at"] = saved_page.get("created_at")
+    if saved_page.get("updated_at"):
+        merged["updated_at"] = saved_page.get("updated_at")
+    return merged
+
+
 def merge_scrapbook_pages(saved_pages):
+    saved_rows = [dict(page) for page in (saved_pages or [])]
     saved_by_id = {
         page.get("id"): page
-        for page in (saved_pages or [])
-        if page.get("id") in SCRAPBOOK_PAGE_IDS
+        for page in saved_rows
+        if scrapbook_page_id_is_valid(page.get("id"))
     }
     pages = []
     for default_page in scrapbook_page_defaults():
         saved = saved_by_id.get(default_page["id"], {})
-        merged = {**default_page}
-        for field in SCRAPBOOK_PAGE_FIELDS:
-            value = sanitize_text(saved.get(field), 800 if field.endswith("_note") else 120)
-            if value:
-                merged[field] = value
-        pages.append(merged)
-    return pages
+        pages.append(merge_scrapbook_page_values(default_page, saved))
+
+    custom_pages = []
+    custom_saved_rows = {
+        page.get("id"): page
+        for page in saved_rows
+        if normalize_scrapbook_page_id(page.get("id"))
+        and page.get("id") not in SCRAPBOOK_PAGE_IDS
+    }
+    for _, saved_page in sorted(
+        custom_saved_rows.items(),
+        key=lambda item: scrapbook_page_sort_key(item[1]),
+    ):
+        custom_page = build_custom_scrapbook_page(saved_page)
+        if custom_page:
+            custom_pages.append(custom_page)
+
+    return finalize_scrapbook_pages(pages + custom_pages)
+
+
+def overlay_scrapbook_pages(base_pages, saved_pages):
+    saved_rows = [dict(page) for page in (saved_pages or [])]
+    saved_by_id = {
+        page.get("id"): page
+        for page in saved_rows
+        if scrapbook_page_id_is_valid(page.get("id"))
+    }
+    pages = []
+    seen_ids = set()
+    for base_page in base_pages or scrapbook_page_defaults():
+        page_id = normalize_scrapbook_page_id(base_page.get("id"))
+        if not page_id:
+            continue
+        seen_ids.add(page_id)
+        saved = saved_by_id.get(page_id, {})
+        pages.append(merge_scrapbook_page_values(base_page, saved))
+
+    new_custom_pages = []
+    for _, saved_page in sorted(
+        saved_by_id.items(),
+        key=lambda item: scrapbook_page_sort_key(item[1]),
+    ):
+        page_id = normalize_scrapbook_page_id(saved_page.get("id"))
+        if not page_id or page_id in seen_ids:
+            continue
+        custom_page = build_custom_scrapbook_page(saved_page)
+        if not custom_page:
+            continue
+        new_custom_pages.append(custom_page)
+        seen_ids.add(page_id)
+
+    return finalize_scrapbook_pages(pages + new_custom_pages)
 
 
 def build_scrapbook_photo_map(scrapbook_pages, scrapbook_photos):
@@ -304,6 +437,59 @@ def build_scrapbook_photo_map(scrapbook_pages, scrapbook_photos):
             assigned.append(legacy_photos.pop(0))
 
     return grouped
+
+
+def photo_sort_key(photo):
+    value = (
+        photo.get("uploaded_at")
+        or photo.get("created_at")
+        or photo.get("updated_at")
+        or ""
+    )
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
+    return str(value)
+
+
+def sort_photos_desc(photos):
+    return sorted(photos or [], key=photo_sort_key, reverse=True)
+
+
+def prepare_photo_records(photos, source_namespace="", can_delete=True):
+    prepared = []
+    for photo in photos or []:
+        current = dict(photo)
+        current["source_namespace"] = source_namespace or ""
+        current["can_delete"] = bool(can_delete)
+        prepared.append(current)
+    return prepared
+
+
+def merge_photo_lists(*photo_groups, limit=None):
+    merged = []
+    seen = set()
+    for group in photo_groups:
+        for photo in group or []:
+            key = (photo.get("source_namespace") or "", photo.get("id") or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(photo)
+    merged = sort_photos_desc(merged)
+    if limit is not None:
+        return merged[:limit]
+    return merged
+
+
+def filter_out_photo_ids(photos, removed_ids):
+    removed = {str(photo_id) for photo_id in (removed_ids or set()) if photo_id}
+    return [
+        dict(photo)
+        for photo in (photos or [])
+        if str(photo.get("id") or "") not in removed
+    ]
 
 
 def scrapbook_page_form_values(form):
@@ -453,9 +639,10 @@ def storage_ready():
     return init_cloudinary()
 
 
-def cloudinary_folder(section):
+def cloudinary_folder(section, upload_folder=None):
     section = normalize_photo_section(section)
-    return f"{CLOUDINARY_UPLOAD_FOLDER}/{section}".strip("/")
+    folder_root = (upload_folder or CLOUDINARY_UPLOAD_FOLDER).strip().strip("/") or CLOUDINARY_UPLOAD_FOLDER
+    return f"{folder_root}/{section}".strip("/")
 
 
 def friendly_upload_error(error):
@@ -509,6 +696,29 @@ def upload_to_cloudinary(file_storage, section="gallery"):
     secure_url = result.get("secure_url") or result.get("url")
     if not public_id or not secure_url:
         raise RuntimeError("Cloudinary upload did not return a public URL.")
+
+    return {
+        "url": secure_url,
+        "storage_path": public_id,
+        "public_id": public_id,
+    }
+
+
+def clone_cloudinary_asset(source_url, section="gallery", upload_folder=None):
+    if not init_cloudinary():
+        raise RuntimeError(cloudinary_init_error or "Cloudinary is not configured.")
+
+    result = cloudinary.uploader.upload(
+        source_url,
+        folder=cloudinary_folder(section, upload_folder=upload_folder),
+        resource_type="image",
+        unique_filename=True,
+        overwrite=False,
+    )
+    public_id = result.get("public_id")
+    secure_url = result.get("secure_url") or result.get("url")
+    if not public_id or not secure_url:
+        raise RuntimeError("Cloudinary promote did not return a public URL.")
 
     return {
         "url": secure_url,
@@ -573,10 +783,29 @@ def create_local_scrapbook_pages_table(conn):
             page_date TEXT,
             page_title TEXT,
             page_note TEXT,
+            created_at TEXT,
             updated_at TEXT
         )
         """
     )
+
+
+def ensure_local_scrapbook_pages_schema(conn):
+    create_local_scrapbook_pages_table(conn)
+    existing = set(local_photo_columns(conn, "scrapbook_pages"))
+    missing_columns = {
+        "story_title": "TEXT",
+        "story_event": "TEXT",
+        "story_note": "TEXT",
+        "page_date": "TEXT",
+        "page_title": "TEXT",
+        "page_note": "TEXT",
+        "created_at": "TEXT",
+        "updated_at": "TEXT",
+    }
+    for column, definition in missing_columns.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE scrapbook_pages ADD COLUMN {column} {definition}")
 
 
 def migrate_local_photos_table(conn):
@@ -625,13 +854,13 @@ def ensure_local_schema():
         ).fetchone()
         if table is None:
             create_local_photos_table(conn)
-            create_local_scrapbook_pages_table(conn)
+            ensure_local_scrapbook_pages_schema(conn)
             return
 
         create_sql = table["sql"] or ""
         if "CHECK" in create_sql.upper() and "SCRAPBOOK" not in create_sql.upper():
             migrate_local_photos_table(conn)
-            create_local_scrapbook_pages_table(conn)
+            ensure_local_scrapbook_pages_schema(conn)
             return
 
         existing = set(local_photo_columns(conn))
@@ -650,7 +879,7 @@ def ensure_local_schema():
         for column, definition in missing_columns.items():
             if column not in existing:
                 conn.execute(f"ALTER TABLE photos ADD COLUMN {column} {definition}")
-        create_local_scrapbook_pages_table(conn)
+        ensure_local_scrapbook_pages_schema(conn)
 
 
 def list_local_photos(section):
@@ -728,12 +957,22 @@ def list_local_scrapbook_pages():
 def update_local_scrapbook_page(page_id, values):
     ensure_local_schema()
     with local_connect() as conn:
+        existing = conn.execute(
+            "SELECT created_at FROM scrapbook_pages WHERE id = ? LIMIT 1",
+            (page_id,),
+        ).fetchone()
+        created_at = (
+            values.get("created_at")
+            or (existing["created_at"] if existing else "")
+            or values.get("updated_at")
+            or utc_now_iso()
+        )
         conn.execute(
             """
             INSERT INTO scrapbook_pages (
                 id, story_title, story_event, story_note, page_date,
-                page_title, page_note, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                page_title, page_note, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 story_title = excluded.story_title,
                 story_event = excluded.story_event,
@@ -741,6 +980,7 @@ def update_local_scrapbook_page(page_id, values):
                 page_date = excluded.page_date,
                 page_title = excluded.page_title,
                 page_note = excluded.page_note,
+                created_at = COALESCE(scrapbook_pages.created_at, excluded.created_at),
                 updated_at = excluded.updated_at
             """,
             (
@@ -751,22 +991,70 @@ def update_local_scrapbook_page(page_id, values):
                 values.get("page_date", ""),
                 values.get("page_title", ""),
                 values.get("page_note", ""),
+                created_at,
                 values.get("updated_at"),
             ),
         )
 
 
-def list_cloud_scrapbook_pages(current_db):
+def list_cloud_photos(current_db, section, namespace=None, limit=None):
     rows = []
     try:
-        for doc in current_db.collection(firestore_collection_name("scrapbook_pages")).stream(
+        query = current_db.collection(collection_name_for("photos", namespace)).where(
+            filter=FieldFilter("section", "==", normalize_photo_section(section))
+        )
+        if limit is not None:
+            query = query.limit(limit)
+        rows = [
+            {"id": doc.id, **doc.to_dict()}
+            for doc in query.stream(
+                retry=None,
+                timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+            )
+        ]
+    except Exception as exc:
+        print(f"CLOUD PHOTOS LOAD ERROR ({section}): {exc}")
+    return sort_photos_desc(rows)
+
+
+def list_cloud_scrapbook_page_rows(current_db, namespace=None):
+    rows = []
+    try:
+        for doc in current_db.collection(collection_name_for("scrapbook_pages", namespace)).stream(
             retry=None,
             timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
         ):
             rows.append({"id": doc.id, **doc.to_dict()})
     except Exception as exc:
         print(f"SCRAPBOOK PAGES LOAD ERROR: {exc}")
+    return rows
+
+
+def list_cloud_scrapbook_pages(current_db, namespace=None):
+    rows = list_cloud_scrapbook_page_rows(current_db, namespace=namespace)
     return merge_scrapbook_pages(rows)
+
+
+def list_cloud_photo_deletion_rows(current_db, namespace=None):
+    rows = []
+    try:
+        for doc in current_db.collection(collection_name_for("photo_deletions", namespace)).stream(
+            retry=None,
+            timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+        ):
+            rows.append({"id": doc.id, **doc.to_dict()})
+    except Exception as exc:
+        print(f"PHOTO DELETIONS LOAD ERROR: {exc}")
+    return rows
+
+
+def deleted_photo_id_set(deletion_rows):
+    ids = set()
+    for row in deletion_rows or []:
+        photo_id = row.get("photo_id") or row.get("id")
+        if photo_id:
+            ids.add(str(photo_id))
+    return ids
 
 
 def upload_to_local(file_storage, section="gallery"):
@@ -831,61 +1119,73 @@ def index():
 
     try:
         if local_backend:
-            featured = list_local_photos("featured")[:3]
-            gallery = list_local_photos("gallery")
-            scrapbook = list_local_photos("scrapbook")
+            featured = prepare_photo_records(list_local_photos("featured")[:3], can_delete=True)
+            gallery = prepare_photo_records(list_local_photos("gallery"), can_delete=True)
+            scrapbook = prepare_photo_records(list_local_photos("scrapbook"), can_delete=True)
             scrapbook_pages = list_local_scrapbook_pages()
         else:
             if current_db is None:
                 raise RuntimeError(firebase_init_error or "Firestore is not configured.")
 
-            photos_collection = current_db.collection(firestore_collection_name("photos"))
+            if public_edit_server():
+                staged_deletion_rows = list_cloud_photo_deletion_rows(
+                    current_db,
+                    namespace=SITE_DATA_NAMESPACE,
+                )
+                deleted_live_ids = deleted_photo_id_set(staged_deletion_rows)
+                live_featured = prepare_photo_records(
+                    filter_out_photo_ids(
+                        list_cloud_photos(current_db, "featured", namespace=""),
+                        deleted_live_ids,
+                    ),
+                    source_namespace="live",
+                    can_delete=True,
+                )
+                staged_featured = prepare_photo_records(
+                    list_cloud_photos(current_db, "featured", namespace=SITE_DATA_NAMESPACE),
+                    source_namespace=SITE_DATA_NAMESPACE or "staging",
+                    can_delete=True,
+                )
+                featured = merge_photo_lists(live_featured, staged_featured, limit=3)
 
-            featured_ref = photos_collection.where(
-                filter=FieldFilter("section", "==", "featured")
-            ).limit(3)
-            gallery_ref = photos_collection.where(
-                filter=FieldFilter("section", "==", "gallery")
-            )
-            scrapbook_ref = photos_collection.where(
-                filter=FieldFilter("section", "==", "scrapbook")
-            )
+                live_gallery = prepare_photo_records(
+                    filter_out_photo_ids(
+                        list_cloud_photos(current_db, "gallery", namespace=""),
+                        deleted_live_ids,
+                    ),
+                    source_namespace="live",
+                    can_delete=True,
+                )
+                staged_gallery = prepare_photo_records(
+                    list_cloud_photos(current_db, "gallery", namespace=SITE_DATA_NAMESPACE),
+                    source_namespace=SITE_DATA_NAMESPACE or "staging",
+                    can_delete=True,
+                )
+                gallery = merge_photo_lists(live_gallery, staged_gallery)
 
-            featured = sorted(
-                [
-                    {"id": d.id, **d.to_dict()}
-                    for d in featured_ref.stream(
-                        retry=None,
-                        timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
-                    )
-                ],
-                key=lambda x: x.get("uploaded_at") or "",
-                reverse=True
-            )[:3]
+                live_scrapbook = prepare_photo_records(
+                    filter_out_photo_ids(
+                        list_cloud_photos(current_db, "scrapbook", namespace=""),
+                        deleted_live_ids,
+                    ),
+                    source_namespace="live",
+                    can_delete=True,
+                )
+                staged_scrapbook = prepare_photo_records(
+                    list_cloud_photos(current_db, "scrapbook", namespace=SITE_DATA_NAMESPACE),
+                    source_namespace=SITE_DATA_NAMESPACE or "staging",
+                    can_delete=True,
+                )
+                scrapbook = merge_photo_lists(live_scrapbook, staged_scrapbook)
 
-            gallery = sorted(
-                [
-                    {"id": d.id, **d.to_dict()}
-                    for d in gallery_ref.stream(
-                        retry=None,
-                        timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
-                    )
-                ],
-                key=lambda x: x.get("uploaded_at") or "",
-                reverse=True
-            )
-            scrapbook = sorted(
-                [
-                    {"id": d.id, **d.to_dict()}
-                    for d in scrapbook_ref.stream(
-                        retry=None,
-                        timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
-                    )
-                ],
-                key=lambda x: x.get("uploaded_at") or "",
-                reverse=True
-            )
-            scrapbook_pages = list_cloud_scrapbook_pages(current_db)
+                live_pages = list_cloud_scrapbook_pages(current_db, namespace="")
+                staged_page_rows = list_cloud_scrapbook_page_rows(current_db, namespace=SITE_DATA_NAMESPACE)
+                scrapbook_pages = overlay_scrapbook_pages(live_pages, staged_page_rows)
+            else:
+                featured = prepare_photo_records(list_cloud_photos(current_db, "featured")[:3], can_delete=True)
+                gallery = prepare_photo_records(list_cloud_photos(current_db, "gallery"), can_delete=True)
+                scrapbook = prepare_photo_records(list_cloud_photos(current_db, "scrapbook"), can_delete=True)
+                scrapbook_pages = list_cloud_scrapbook_pages(current_db)
         scrapbook_photo_map = build_scrapbook_photo_map(scrapbook_pages, scrapbook)
     except Exception as e:
         print(f"INDEX ERROR: {e}")
@@ -1145,7 +1445,7 @@ def update_scrapbook_page(page_id):
         flash("Use your private edit link to change the scrapbook.", "error")
         return redirect_to_index(_anchor="story")
 
-    if page_id not in SCRAPBOOK_PAGE_IDS:
+    if not scrapbook_page_id_is_valid(page_id):
         flash("Scrapbook page not found.", "error")
         return redirect_to_index(_anchor="story")
 
@@ -1173,6 +1473,208 @@ def update_scrapbook_page(page_id):
         print(f"SCRAPBOOK PAGE UPDATE ERROR: {exc}")
         traceback.print_exc()
         flash("Scrapbook page could not be saved.", "error")
+
+    return redirect_to_index(scrapbook="1", _anchor="story")
+
+
+@app.route("/scrapbook/page/create", methods=["POST"])
+def create_scrapbook_page():
+    if not scrapbook_edit_allowed():
+        flash("Use your private edit link to change the scrapbook.", "error")
+        return redirect_to_index(_anchor="story")
+
+    page_id = f"{CUSTOM_SCRAPBOOK_PAGE_PREFIX}{uuid.uuid4().hex[:10]}"
+    created_at = utc_now_iso()
+    values = scrapbook_page_form_values(request.form)
+    values["created_at"] = created_at
+    local_backend = use_local_backend()
+
+    try:
+        if local_backend:
+            update_local_scrapbook_page(page_id, values)
+        else:
+            current_db = init_firebase()
+            if current_db is None:
+                raise RuntimeError(firebase_init_error or "Firestore is not configured.")
+            current_db.collection(firestore_collection_name("scrapbook_pages")).document(page_id).set(
+                {
+                    **values,
+                    "created_at": firestore.SERVER_TIMESTAMP,
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+                retry=None,
+                timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+            )
+        flash("New scrapbook page created. Add photos for this moment next.", "success")
+    except Exception as exc:
+        print(f"SCRAPBOOK PAGE CREATE ERROR: {exc}")
+        traceback.print_exc()
+        flash("A new scrapbook page could not be created.", "error")
+        return redirect_to_index(scrapbook="1", _anchor="story")
+
+    return redirect_to_index(
+        scrapbook="1",
+        upload_scrapbook_page=page_id,
+        _anchor="story",
+    )
+
+
+@app.route("/promote-to-live", methods=["POST"])
+def promote_to_live():
+    if not public_edit_server():
+        flash("Promote to live is only available on the test site.", "error")
+        return redirect_to_index()
+    if not site_manage_allowed():
+        flash("Use your private manage link to promote changes.", "error")
+        return redirect_to_index()
+    if not SITE_DATA_NAMESPACE:
+        flash("This test site is not configured with a staging namespace.", "error")
+        return redirect_to_index()
+    if use_local_backend():
+        flash("Promote to live is only available on the deployed test site.", "error")
+        return redirect_to_index()
+
+    current_db = init_firebase()
+    if current_db is None:
+        flash("Firebase is not configured on this deployment yet.", "error")
+        return redirect_to_index()
+    if not storage_ready():
+        flash("Cloudinary is not configured on this deployment yet.", "error")
+        return redirect_to_index()
+
+    try:
+        staged_page_rows = list_cloud_scrapbook_page_rows(current_db, namespace=SITE_DATA_NAMESPACE)
+        staged_deletion_rows = list_cloud_photo_deletion_rows(
+            current_db,
+            namespace=SITE_DATA_NAMESPACE,
+        )
+        staged_photos = []
+        for section_name in ("featured", "gallery", "scrapbook"):
+            staged_photos.extend(
+                list_cloud_photos(current_db, section_name, namespace=SITE_DATA_NAMESPACE)
+            )
+
+        if not staged_page_rows and not staged_photos and not staged_deletion_rows:
+            flash("No test changes are waiting to be promoted.", "success")
+            return redirect_to_index(scrapbook="1", _anchor="story")
+
+        live_photos_collection = current_db.collection(collection_name_for("photos", ""))
+        staged_photos_collection = current_db.collection(
+            collection_name_for("photos", SITE_DATA_NAMESPACE)
+        )
+        staged_deletions_collection = current_db.collection(
+            collection_name_for("photo_deletions", SITE_DATA_NAMESPACE)
+        )
+        live_pages_collection = current_db.collection(collection_name_for("scrapbook_pages", ""))
+        staged_pages_collection = current_db.collection(
+            collection_name_for("scrapbook_pages", SITE_DATA_NAMESPACE)
+        )
+
+        promoted_pages = 0
+        promoted_photos = 0
+        promoted_deletions = 0
+
+        for page in staged_page_rows:
+            page_id = page.get("id")
+            if not scrapbook_page_id_is_valid(page_id):
+                continue
+            payload = {
+                field: page.get(field, "")
+                for field in SCRAPBOOK_PAGE_FIELDS
+                if page.get(field) is not None
+            }
+            if page.get("created_at") is not None:
+                payload["created_at"] = page.get("created_at")
+            payload["updated_at"] = firestore.SERVER_TIMESTAMP
+            live_pages_collection.document(page_id).set(
+                payload,
+                merge=True,
+                retry=None,
+                timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+            )
+            staged_pages_collection.document(page_id).delete(
+                retry=None,
+                timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+            )
+            promoted_pages += 1
+
+        for photo in staged_photos:
+            section = normalize_photo_section(photo.get("section"))
+            promoted_asset = None
+            try:
+                promoted_asset = clone_cloudinary_asset(
+                    photo.get("url"),
+                    section=section,
+                    upload_folder=LIVE_CLOUDINARY_UPLOAD_FOLDER,
+                )
+                live_photos_collection.add(
+                    {
+                        "url": promoted_asset["url"],
+                        "storage_path": promoted_asset["storage_path"],
+                        "public_id": promoted_asset["public_id"],
+                        "caption": (photo.get("caption") or "").strip(),
+                        "section": section,
+                        "scrapbook_page_id": normalize_scrapbook_page_id(
+                            photo.get("scrapbook_page_id")
+                        ),
+                        "uploaded_at": firestore.SERVER_TIMESTAMP,
+                    },
+                    retry=None,
+                    timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+                )
+            except Exception:
+                if promoted_asset:
+                    delete_cloudinary_asset(
+                        promoted_asset.get("public_id") or promoted_asset.get("storage_path")
+                    )
+                raise
+
+            staged_asset_id = photo.get("public_id") or photo.get("storage_path")
+            if staged_asset_id:
+                delete_cloudinary_asset(staged_asset_id)
+            staged_photos_collection.document(photo["id"]).delete(
+                retry=None,
+                timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+            )
+            promoted_photos += 1
+
+        for deletion in staged_deletion_rows:
+            live_photo_id = deletion.get("photo_id") or deletion.get("id")
+            if not live_photo_id:
+                continue
+            live_photo_ref = live_photos_collection.document(str(live_photo_id))
+            live_doc = live_photo_ref.get(
+                retry=None,
+                timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+            )
+            if live_doc.exists:
+                live_data = live_doc.to_dict() or {}
+                delete_cloudinary_asset(
+                    live_data.get("public_id") or live_data.get("storage_path")
+                )
+                live_photo_ref.delete(
+                    retry=None,
+                    timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+                )
+            staged_deletions_collection.document(str(live_photo_id)).delete(
+                retry=None,
+                timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+            )
+            promoted_deletions += 1
+
+        flash(
+            (
+                f"Promoted {promoted_photos} photo(s), "
+                f"{promoted_deletions} deletion(s), and "
+                f"{promoted_pages} scrapbook page change(s) to live."
+            ),
+            "success",
+        )
+    except Exception as exc:
+        print(f"PROMOTE ERROR: {exc}")
+        traceback.print_exc()
+        flash("Promote to live failed. The live site was not fully updated.", "error")
 
     return redirect_to_index(scrapbook="1", _anchor="story")
 
@@ -1280,11 +1782,13 @@ def replace(photo_id):
 
 @app.route("/delete/<photo_id>", methods=["POST"])
 def delete(photo_id):
+    redirect_params = {}
     try:
         if not site_manage_allowed():
             flash("Use your private manage link to delete photos.", "error")
             return redirect_to_index()
 
+        source_namespace = (request.form.get("source_namespace") or "").strip().lower()
         local_backend = use_local_backend()
         current_db = None if local_backend else init_firebase()
         if not local_backend and current_db is None:
@@ -1294,29 +1798,60 @@ def delete(photo_id):
         if local_backend:
             data = get_local_photo(photo_id)
             if data:
+                if data.get("section") == "scrapbook":
+                    redirect_params = {"scrapbook": "1", "_anchor": "story"}
                 delete_local_asset(data.get("storage_path") or data.get("public_id"))
                 delete_local_photo(photo_id)
                 flash("Photo deleted.", "success")
         else:
-            photo_ref = current_db.collection(firestore_collection_name("photos")).document(photo_id)
-            doc = photo_ref.get(
-                retry=None,
-                timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS
-            )
-            if not doc.exists:
-                return redirect_to_index()
-            data = doc.to_dict()
-            delete_cloudinary_asset(data.get("public_id") or data.get("storage_path"))
-            photo_ref.delete(
-                retry=None,
-                timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS
-            )
-            flash("Photo deleted.", "success")
+            if public_edit_server() and source_namespace == "live":
+                photo_ref = current_db.collection(collection_name_for("photos", "")).document(photo_id)
+                doc = photo_ref.get(
+                    retry=None,
+                    timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+                )
+                if not doc.exists:
+                    return redirect_to_index()
+                data = doc.to_dict() or {}
+                if data.get("section") == "scrapbook":
+                    redirect_params = {"scrapbook": "1", "_anchor": "story"}
+                current_db.collection(collection_name_for("photo_deletions", SITE_DATA_NAMESPACE)).document(photo_id).set(
+                    {
+                        "photo_id": photo_id,
+                        "section": normalize_photo_section(data.get("section")),
+                        "caption": data.get("caption", ""),
+                        "public_id": data.get("public_id") or data.get("storage_path"),
+                        "storage_path": data.get("storage_path"),
+                        "url": data.get("url", ""),
+                        "created_at": firestore.SERVER_TIMESTAMP,
+                    },
+                    merge=True,
+                    retry=None,
+                    timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
+                )
+                flash("Photo marked for deletion. Promote to live when you're ready.", "success")
+            else:
+                photo_ref = current_db.collection(firestore_collection_name("photos")).document(photo_id)
+                doc = photo_ref.get(
+                    retry=None,
+                    timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS
+                )
+                if not doc.exists:
+                    return redirect_to_index()
+                data = doc.to_dict() or {}
+                if data.get("section") == "scrapbook":
+                    redirect_params = {"scrapbook": "1", "_anchor": "story"}
+                delete_cloudinary_asset(data.get("public_id") or data.get("storage_path"))
+                photo_ref.delete(
+                    retry=None,
+                    timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS
+                )
+                flash("Photo deleted.", "success")
     except Exception as e:
         print(f"DELETE ERROR: {e}")
         flash("Delete failed.", "error")
 
-    return redirect_to_index()
+    return redirect_to_index(**redirect_params)
 
 
 @app.errorhandler(RequestEntityTooLarge)
