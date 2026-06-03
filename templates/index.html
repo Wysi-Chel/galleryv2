@@ -1196,7 +1196,9 @@
     <li><a href="#memories">Memories</a></li>
     <li><a href="#story">Story</a></li>
   </ul>
-  <button class="btn-upload-nav" onclick="openModal('gallery')">+ Upload Photo</button>
+  {% if site_manage_mode %}
+    <button class="btn-upload-nav" onclick="openModal('gallery')">+ Upload Photo</button>
+  {% endif %}
 </nav>
 
 <!-- FLASH MESSAGES -->
@@ -1225,11 +1227,21 @@
     <p class="sub">JPG, PNG, WEBP or GIF &nbsp;&middot;&nbsp; Max {{ max_file_size_mb }}MB per file ({{ max_request_size_mb }}MB total) &nbsp;&middot;&nbsp; Saved to {{ upload_storage_label }}</p>
     <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data" onsubmit="return false;">
       <input type="hidden" name="section" id="uploadSection" value="gallery" />
+      <input type="hidden" name="manage_key" value="{{ site_manage_value }}" />
       <div class="form-group">
         <label>Caption</label>
         <input type="text" name="caption" placeholder="e.g. Golden hour together…" />
       </div>
       <p class="upload-target" id="uploadTargetText">Saving to Gallery</p>
+      <div class="form-group" id="scrapbookPageField" hidden>
+        <label>Scrapbook moment</label>
+        <select name="scrapbook_page_id" id="scrapbookPageId">
+          <option value="">Choose a scrapbook moment</option>
+          {% for page in scrapbook_pages_config %}
+            <option value="{{ page.id }}">{{ page.number }} - {{ page.page_title }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="form-group">
         <label>Photos</label>
         <div class="drop-zone" id="dropZone">
@@ -1283,9 +1295,12 @@
                   >
                     View full photo
                   </button>
-                  <form method="POST" action="/delete/{{ photo.id }}" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
-                    <button type="submit" class="delete-btn">Delete</button>
-                  </form>
+                  {% if site_manage_mode %}
+                    <form method="POST" action="/delete/{{ photo.id }}" onsubmit="event.stopPropagation(); return confirm('Delete this photo?')">
+                      <input type="hidden" name="manage_key" value="{{ site_manage_value }}" />
+                      <button type="submit" class="delete-btn">Delete</button>
+                    </form>
+                  {% endif %}
                 </div>
               </article>
             {% endfor %}
@@ -1309,9 +1324,13 @@
         </div>
       </div>
     {% else %}
-      <div class="gallery-empty" onclick="openModal('gallery')">
+      <div class="gallery-empty"{% if site_manage_mode %} onclick="openModal('gallery')"{% endif %}>
         <span>No photos yet</span>
-        Click here or the Upload button to add your first photo.
+        {% if site_manage_mode %}
+          Click here or the Upload button to add your first photo.
+        {% else %}
+          This gallery is view-only right now.
+        {% endif %}
       </div>
     {% endif %}
   </div>
@@ -1335,7 +1354,9 @@
     </p>
     <div class="story-actions">
       <button type="button" class="scrapbook-trigger" onclick="openScrapbook()">Open scrapbook</button>
-      <button type="button" class="scrapbook-upload-btn" onclick="openModal('scrapbook')">Attach photos</button>
+      {% if site_manage_mode %}
+        <button type="button" class="scrapbook-upload-btn" onclick="openModal('scrapbook')">Attach photos</button>
+      {% endif %}
       {% if scrapbook_edit_mode %}
         <a class="scrapbook-upload-btn" href="{{ url_for('index', _anchor='story') }}">Done editing</a>
       {% elif scrapbook_edit_is_public %}
@@ -1375,8 +1396,7 @@
 
     <div class="scrapbook-book">
       {% for page in scrapbook_pages_config %}
-        {% set photo_start = loop.index0 * 2 %}
-        {% set page_photos = scrapbook_photos[photo_start:photo_start + 2] %}
+        {% set page_photos = scrapbook_photo_map.get(page.id, [])[:2] %}
         <article class="scrapbook-page">
           {% if scrapbook_edit_mode %}
             <form class="scrapbook-page-editor" method="POST" action="{{ url_for('update_scrapbook_page', page_id=page.id) }}" onclick="event.stopPropagation()">
@@ -1426,7 +1446,9 @@
               <div class="scrapbook-empty-photo">Attach a photo for this page</div>
             {% endfor %}
           </div>
-          <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload()">Attach photos</button>
+          {% if site_manage_mode %}
+            <button type="button" class="scrapbook-page-open" onclick="openScrapbookUpload('{{ page.id }}')">Attach photos</button>
+          {% endif %}
         </article>
       {% endfor %}
     </div>
@@ -1446,7 +1468,9 @@
 
     <div class="scrapbook-footer">
       <span>{{ scrapbook_photos|length }} scrapbook photo{% if scrapbook_photos|length != 1 %}s{% endif %} ready for the scrapbook.</span>
-      <button type="button" class="scrapbook-upload-btn" onclick="openScrapbookUpload()">Upload more moments</button>
+      {% if site_manage_mode %}
+        <button type="button" class="scrapbook-upload-btn" onclick="openScrapbookUpload()">Upload more moments</button>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -1472,11 +1496,13 @@
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }
   document.getElementById('year').textContent = new Date().getFullYear();
-  function setUploadSection(section = 'gallery') {
+  function setUploadSection(section = 'gallery', pageId = '') {
     const normalized = section === 'scrapbook' ? 'scrapbook' : 'gallery';
     const input = document.getElementById('uploadSection');
     const targetText = document.getElementById('uploadTargetText');
     const submitButton = document.getElementById('uploadSubmitButton');
+    const scrapbookField = document.getElementById('scrapbookPageField');
+    const scrapbookSelect = document.getElementById('scrapbookPageId');
     if (input) input.value = normalized;
     if (targetText) {
       targetText.textContent = normalized === 'scrapbook' ? 'Saving to Scrapbook' : 'Saving to Gallery';
@@ -1484,9 +1510,16 @@
     if (submitButton) {
       submitButton.textContent = normalized === 'scrapbook' ? 'Upload to Scrapbook' : 'Upload to Gallery';
     }
+    if (scrapbookField) {
+      scrapbookField.hidden = normalized !== 'scrapbook';
+    }
+    if (scrapbookSelect) {
+      scrapbookSelect.required = normalized === 'scrapbook';
+      scrapbookSelect.value = normalized === 'scrapbook' ? (pageId || '') : '';
+    }
   }
-  function openModal(section = 'gallery') {
-    setUploadSection(section);
+  function openModal(section = 'gallery', pageId = '') {
+    setUploadSection(section, pageId);
     document.getElementById('modalOverlay').classList.add('active');
   }
   function closeModal() { document.getElementById('modalOverlay').classList.remove('active'); }
@@ -1519,9 +1552,9 @@
   function closeScrapbookOutside(e) {
     if (e.target === document.getElementById('scrapbookOverlay')) closeScrapbook();
   }
-  function openScrapbookUpload() {
+  function openScrapbookUpload(pageId = '') {
     closeScrapbook();
-    openModal('scrapbook');
+    openModal('scrapbook', pageId);
   }
   function openScrapbookFromUrl() {
     const params = new URLSearchParams(window.location.search);
@@ -1629,11 +1662,19 @@
       }
 
       const captionInput = uploadForm.querySelector('input[name="caption"]');
+      const manageKeyInput = uploadForm.querySelector('input[name="manage_key"]');
       const sectionInput = uploadForm.querySelector('[name="section"]');
+      const scrapbookPageInput = uploadForm.querySelector('[name="scrapbook_page_id"]');
       const caption = captionInput ? captionInput.value : '';
+      const manageKey = manageKeyInput ? manageKeyInput.value : '';
       const section = sectionInput ? sectionInput.value : 'gallery';
+      const scrapbookPageId = scrapbookPageInput ? scrapbookPageInput.value : '';
 
       try {
+        if (section === 'scrapbook' && !scrapbookPageId) {
+          throw new Error('Choose the scrapbook moment before uploading.');
+        }
+
         for (let index = 0; index < files.length; index += 1) {
           if (submitBtn) {
             submitBtn.textContent = `Uploading ${index + 1}/${files.length}...`;
@@ -1647,6 +1688,10 @@
           const formData = new FormData();
           formData.append('caption', caption);
           formData.append('section', section);
+          formData.append('manage_key', manageKey);
+          if (section === 'scrapbook') {
+            formData.append('scrapbook_page_id', scrapbookPageId);
+          }
           formData.append('_async', '1');
           formData.append('photo', file);
 
@@ -1661,7 +1706,15 @@
           }
         }
 
-        window.location.href = '/';
+        const nextUrl = new URL(window.location.href);
+        if (section === 'scrapbook') {
+          nextUrl.searchParams.set('scrapbook', '1');
+          nextUrl.hash = 'story';
+        } else {
+          nextUrl.searchParams.delete('scrapbook');
+          nextUrl.hash = '';
+        }
+        window.location.href = nextUrl.toString();
       } catch (err) {
         alert(`Upload failed. Please choose a smaller photo or try one photo at a time. ${err.message || ''}`);
         console.error(err);

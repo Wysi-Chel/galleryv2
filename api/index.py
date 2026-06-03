@@ -107,7 +107,22 @@ CLOUDINARY_URL = cloudinary_setting("CLOUDINARY_URL").strip()
 CLOUDINARY_CLOUD_NAME = cloudinary_setting("CLOUDINARY_CLOUD_NAME").strip()
 CLOUDINARY_API_KEY = cloudinary_setting("CLOUDINARY_API_KEY").strip()
 CLOUDINARY_API_SECRET = cloudinary_setting("CLOUDINARY_API_SECRET").strip()
-SCRAPBOOK_EDIT_KEY = os.environ.get("SCRAPBOOK_EDIT_KEY", "").strip()
+SITE_EDIT_KEY = (
+    os.environ.get("SITE_EDIT_KEY")
+    or os.environ.get("MANAGE_KEY")
+    or ""
+).strip()
+SCRAPBOOK_EDIT_KEY = (os.environ.get("SCRAPBOOK_EDIT_KEY") or SITE_EDIT_KEY).strip()
+SITE_DATA_NAMESPACE = (
+    "".join(
+        char.lower()
+        for char in (os.environ.get("SITE_DATA_NAMESPACE") or os.environ.get("DATA_NAMESPACE") or "")
+        if char.isalnum() or char in {"-", "_"}
+    )
+    .replace("-", "_")
+    .strip("_")
+)
+SITE_MODE = (os.environ.get("SITE_MODE") or "").strip().lower()
 
 
 def has_cloudinary_credentials():
@@ -137,6 +152,45 @@ def utc_now_iso():
 
 def normalize_photo_section(section):
     return section if section in {"gallery", "featured", "scrapbook"} else "gallery"
+
+
+def public_edit_server():
+    return SITE_MODE in {"test", "staging"}
+
+
+def active_private_key():
+    return (
+        request.values.get("manage_key")
+        or request.args.get("manage")
+        or request.form.get("manage")
+        or request.values.get("edit_key")
+        or request.args.get("edit")
+        or request.form.get("edit")
+        or ""
+    ).strip()
+
+
+def active_private_params():
+    params = {}
+    manage_value = site_manage_value()
+    if manage_value:
+        params["manage"] = manage_value
+    edit_value = scrapbook_edit_value()
+    if edit_value:
+        params["edit"] = edit_value
+    return params
+
+
+def redirect_to_index(**params):
+    merged = active_private_params()
+    merged.update(params)
+    return redirect(url_for("index", **merged))
+
+
+def firestore_collection_name(base_name):
+    if SITE_DATA_NAMESPACE:
+        return f"{SITE_DATA_NAMESPACE}_{base_name}"
+    return base_name
 
 
 DEFAULT_SCRAPBOOK_PAGES = [
@@ -196,6 +250,11 @@ SCRAPBOOK_PAGE_FIELDS = (
 )
 
 
+def normalize_scrapbook_page_id(page_id):
+    normalized = (page_id or "").strip()
+    return normalized if normalized in SCRAPBOOK_PAGE_IDS else ""
+
+
 def sanitize_text(value, max_length=500):
     text = (value or "").strip()
     return text[:max_length]
@@ -223,6 +282,30 @@ def merge_scrapbook_pages(saved_pages):
     return pages
 
 
+def build_scrapbook_photo_map(scrapbook_pages, scrapbook_photos):
+    grouped = {page["id"]: [] for page in (scrapbook_pages or [])}
+    legacy_photos = []
+
+    for photo in scrapbook_photos or []:
+        page_id = normalize_scrapbook_page_id(
+            photo.get("scrapbook_page_id")
+            or photo.get("page_id")
+            or photo.get("moment_id")
+        )
+        if page_id:
+            grouped.setdefault(page_id, []).append(photo)
+        else:
+            legacy_photos.append(photo)
+
+    # Keep older scrapbook uploads visible by backfilling unassigned photos into open slots.
+    for page in scrapbook_pages or []:
+        assigned = grouped.setdefault(page["id"], [])
+        while legacy_photos and len(assigned) < 2:
+            assigned.append(legacy_photos.pop(0))
+
+    return grouped
+
+
 def scrapbook_page_form_values(form):
     return {
         "story_title": sanitize_text(form.get("story_title"), 120),
@@ -236,19 +319,45 @@ def scrapbook_page_form_values(form):
 
 
 def scrapbook_edit_value():
-    return SCRAPBOOK_EDIT_KEY or "1"
+    supplied_key = active_private_key()
+    if public_edit_server():
+        allowed_keys = {"1"}
+        if SCRAPBOOK_EDIT_KEY:
+            allowed_keys.add(SCRAPBOOK_EDIT_KEY)
+        if supplied_key in allowed_keys:
+            return supplied_key
+        return "1"
+    if SCRAPBOOK_EDIT_KEY:
+        return supplied_key if supplied_key == SCRAPBOOK_EDIT_KEY else ""
+    return "1" if not RUNNING_ON_VERCEL else ""
 
 
 def scrapbook_edit_allowed():
-    supplied_key = (
-        request.values.get("edit_key")
-        or request.args.get("edit")
-        or request.form.get("edit")
-        or ""
-    ).strip()
+    if public_edit_server():
+        allowed_keys = {"1"}
+        if SCRAPBOOK_EDIT_KEY:
+            allowed_keys.add(SCRAPBOOK_EDIT_KEY)
+        return active_private_key() in allowed_keys
     if SCRAPBOOK_EDIT_KEY:
-        return supplied_key == SCRAPBOOK_EDIT_KEY
-    return supplied_key == "1"
+        return active_private_key() == SCRAPBOOK_EDIT_KEY
+    return not RUNNING_ON_VERCEL
+
+
+def site_manage_value():
+    supplied_key = active_private_key()
+    configured_key = SITE_EDIT_KEY or SCRAPBOOK_EDIT_KEY
+    if configured_key:
+        return supplied_key if supplied_key == configured_key else ""
+    return ""
+
+
+def site_manage_allowed():
+    if public_edit_server():
+        return True
+    configured_key = SITE_EDIT_KEY or SCRAPBOOK_EDIT_KEY
+    if configured_key:
+        return active_private_key() == configured_key
+    return not RUNNING_ON_VERCEL
 
 
 # Firebase handles Firestore metadata. Cloudinary handles durable image storage.
@@ -260,14 +369,26 @@ def init_firebase():
 
     try:
         if not firebase_admin._apps:
+            key_path = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "serviceAccountKey.json")
+            )
             cred_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
             if cred_json:
-                cred_dict = json.loads(cred_json)
-                cred = credentials.Certificate(cred_dict)
+                try:
+                    cred_dict = json.loads(cred_json)
+                    cred = credentials.Certificate(cred_dict)
+                except json.JSONDecodeError as env_json_error:
+                    if not os.path.exists(key_path):
+                        raise RuntimeError(
+                            "Firebase credentials env var is invalid and no fallback "
+                            "serviceAccountKey.json file was found."
+                        ) from env_json_error
+                    print(
+                        "FIREBASE INIT WARNING: GOOGLE_APPLICATION_CREDENTIALS_JSON "
+                        "is invalid, falling back to serviceAccountKey.json"
+                    )
+                    cred = credentials.Certificate(key_path)
             else:
-                key_path = os.path.abspath(
-                    os.path.join(os.path.dirname(__file__), "..", "serviceAccountKey.json")
-                )
                 if not os.path.exists(key_path):
                     raise FileNotFoundError(
                         "Missing Firebase credentials. Set GOOGLE_APPLICATION_CREDENTIALS_JSON in Vercel."
@@ -432,6 +553,7 @@ def create_local_photos_table(conn):
             section TEXT NOT NULL DEFAULT 'gallery',
             slot_index INTEGER,
             moment_date TEXT,
+            scrapbook_page_id TEXT,
             uploaded_at TEXT,
             created_at TEXT,
             updated_at TEXT
@@ -476,8 +598,8 @@ def migrate_local_photos_table(conn):
             """
             INSERT OR REPLACE INTO photos (
                 id, url, storage_path, public_id, caption, section, slot_index,
-                moment_date, uploaded_at, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                moment_date, scrapbook_page_id, uploaded_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data.get("id") or uuid.uuid4().hex,
@@ -488,6 +610,7 @@ def migrate_local_photos_table(conn):
                 normalize_photo_section(data.get("section")),
                 data.get("slot_index"),
                 data.get("moment_date"),
+                normalize_scrapbook_page_id(data.get("scrapbook_page_id")),
                 uploaded_at,
                 created_at,
                 updated_at,
@@ -519,6 +642,7 @@ def ensure_local_schema():
             "section": "TEXT NOT NULL DEFAULT 'gallery'",
             "slot_index": "INTEGER",
             "moment_date": "TEXT",
+            "scrapbook_page_id": "TEXT",
             "uploaded_at": "TEXT",
             "created_at": "TEXT",
             "updated_at": "TEXT",
@@ -560,8 +684,8 @@ def create_local_photo(values):
             """
             INSERT INTO photos (
                 id, url, storage_path, public_id, caption, section,
-                uploaded_at, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                scrapbook_page_id, uploaded_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 values["id"],
@@ -570,6 +694,7 @@ def create_local_photo(values):
                 values.get("public_id"),
                 values.get("caption", ""),
                 normalize_photo_section(values.get("section")),
+                normalize_scrapbook_page_id(values.get("scrapbook_page_id")),
                 values.get("uploaded_at"),
                 values.get("created_at"),
                 values.get("updated_at"),
@@ -634,7 +759,7 @@ def update_local_scrapbook_page(page_id, values):
 def list_cloud_scrapbook_pages(current_db):
     rows = []
     try:
-        for doc in current_db.collection("scrapbook_pages").stream(
+        for doc in current_db.collection(firestore_collection_name("scrapbook_pages")).stream(
             retry=None,
             timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
         ):
@@ -696,7 +821,9 @@ def index():
     warnings = []
     featured, gallery, scrapbook = [], [], []
     scrapbook_pages = scrapbook_page_defaults()
+    scrapbook_photo_map = build_scrapbook_photo_map(scrapbook_pages, scrapbook)
     scrapbook_edit_mode = scrapbook_edit_allowed()
+    site_manage_mode = site_manage_allowed()
     if not local_backend and current_db is None:
         warnings.append(firebase_init_error or "Firebase is not configured.")
     if not local_backend and not current_storage_ready:
@@ -712,13 +839,15 @@ def index():
             if current_db is None:
                 raise RuntimeError(firebase_init_error or "Firestore is not configured.")
 
-            featured_ref = current_db.collection("photos").where(
+            photos_collection = current_db.collection(firestore_collection_name("photos"))
+
+            featured_ref = photos_collection.where(
                 filter=FieldFilter("section", "==", "featured")
             ).limit(3)
-            gallery_ref = current_db.collection("photos").where(
+            gallery_ref = photos_collection.where(
                 filter=FieldFilter("section", "==", "gallery")
             )
-            scrapbook_ref = current_db.collection("photos").where(
+            scrapbook_ref = photos_collection.where(
                 filter=FieldFilter("section", "==", "scrapbook")
             )
 
@@ -757,6 +886,7 @@ def index():
                 reverse=True
             )
             scrapbook_pages = list_cloud_scrapbook_pages(current_db)
+        scrapbook_photo_map = build_scrapbook_photo_map(scrapbook_pages, scrapbook)
     except Exception as e:
         print(f"INDEX ERROR: {e}")
 
@@ -788,10 +918,13 @@ def index():
         featured=featured,
         gallery=gallery,
         scrapbook=scrapbook,
+        scrapbook_photo_map=scrapbook_photo_map,
         scrapbook_pages_config=scrapbook_pages,
         scrapbook_edit_mode=scrapbook_edit_mode,
         scrapbook_edit_value=scrapbook_edit_value(),
-        scrapbook_edit_is_public=not SCRAPBOOK_EDIT_KEY,
+        scrapbook_edit_is_public=public_edit_server() or (not RUNNING_ON_VERCEL and not SCRAPBOOK_EDIT_KEY),
+        site_manage_mode=site_manage_mode,
+        site_manage_value=site_manage_value(),
         template_version=template_version,
         firebase_ready=current_db is not None,
         firebase_error=firebase_init_error,
@@ -838,10 +971,18 @@ def add_no_cache_headers(response):
 @app.route("/upload", methods=["GET", "POST"])
 def upload():
     if request.method == "GET":
-        return redirect(url_for("index"))
+        return redirect_to_index()
 
     is_async_upload = request.headers.get("X-Upload-Async") == "1"
+    section = "gallery"
     try:
+        if not site_manage_allowed():
+            message = "Use your private manage link to upload photos."
+            if is_async_upload:
+                return Response(message, status=403)
+            flash(message, "error")
+            return redirect_to_index()
+
         local_backend = use_local_backend()
         current_db = None if local_backend else init_firebase()
         if not local_backend and current_db is None:
@@ -851,7 +992,7 @@ def upload():
                     status=503,
                 )
             flash("Firebase is not configured on this deployment yet.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
         if not local_backend and not storage_ready():
             if is_async_upload:
                 return Response(
@@ -859,17 +1000,25 @@ def upload():
                     status=503,
                 )
             flash("Cloudinary is not configured on this deployment yet.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
 
         files = [f for f in request.files.getlist("photo") if f and f.filename]
         if not files:
             if is_async_upload:
                 return Response("No file selected.", status=400)
             flash("No file selected.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
 
         caption = request.form.get("caption", "").strip()
         section = normalize_photo_section(request.form.get("section", "gallery"))
+        scrapbook_page_id = normalize_scrapbook_page_id(
+            request.form.get("scrapbook_page_id")
+        )
+        if section == "scrapbook" and not scrapbook_page_id:
+            if is_async_upload:
+                return Response("Choose which scrapbook moment these photos belong to.", status=400)
+            flash("Choose which scrapbook moment these photos belong to.", "error")
+            return redirect_to_index(scrapbook="1", _anchor="story")
         uploaded_count = 0
         invalid_count = 0
         too_large_count = 0
@@ -901,6 +1050,7 @@ def upload():
                     "public_id": result.get("public_id") or result["storage_path"],
                     "caption": caption,
                     "section": section,
+                    "scrapbook_page_id": scrapbook_page_id if section == "scrapbook" else "",
                     "uploaded_at": utc_now_iso(),
                     "created_at": utc_now_iso(),
                     "updated_at": utc_now_iso(),
@@ -908,13 +1058,14 @@ def upload():
                 if local_backend:
                     create_local_photo(photo_payload)
                 else:
-                    current_db.collection("photos").add(
+                    current_db.collection(firestore_collection_name("photos")).add(
                         {
                             "url": result["url"],
                             "storage_path": result["storage_path"],
                             "public_id": result.get("public_id") or result["storage_path"],
                             "caption": caption,
                             "section": section,
+                            "scrapbook_page_id": scrapbook_page_id if section == "scrapbook" else "",
                             "uploaded_at": firestore.SERVER_TIMESTAMP,
                         },
                         retry=None,
@@ -983,18 +1134,20 @@ def upload():
             return Response(friendly_upload_error(e), status=500)
         flash(f"Upload failed: {str(e)}", "error")
 
-    return redirect(url_for("index"))
+    if section == "scrapbook":
+        return redirect_to_index(scrapbook="1", _anchor="story")
+    return redirect_to_index()
 
 
 @app.route("/scrapbook/page/<page_id>", methods=["POST"])
 def update_scrapbook_page(page_id):
     if not scrapbook_edit_allowed():
         flash("Use your private edit link to change the scrapbook.", "error")
-        return redirect(url_for("index", _anchor="story"))
+        return redirect_to_index(_anchor="story")
 
     if page_id not in SCRAPBOOK_PAGE_IDS:
         flash("Scrapbook page not found.", "error")
-        return redirect(url_for("index", edit=scrapbook_edit_value(), _anchor="story"))
+        return redirect_to_index(_anchor="story")
 
     values = scrapbook_page_form_values(request.form)
     local_backend = use_local_backend()
@@ -1006,7 +1159,7 @@ def update_scrapbook_page(page_id):
             current_db = init_firebase()
             if current_db is None:
                 raise RuntimeError(firebase_init_error or "Firestore is not configured.")
-            current_db.collection("scrapbook_pages").document(page_id).set(
+            current_db.collection(firestore_collection_name("scrapbook_pages")).document(page_id).set(
                 {
                     **values,
                     "updated_at": firestore.SERVER_TIMESTAMP,
@@ -1021,7 +1174,7 @@ def update_scrapbook_page(page_id):
         traceback.print_exc()
         flash("Scrapbook page could not be saved.", "error")
 
-    return redirect(url_for("index", edit=scrapbook_edit_value(), scrapbook="1", _anchor="story"))
+    return redirect_to_index(scrapbook="1", _anchor="story")
 
 
 @app.route("/replace/<photo_id>", methods=["POST"])
@@ -1029,34 +1182,38 @@ def replace(photo_id):
     result = None
     local_backend = use_local_backend()
     try:
+        if not site_manage_allowed():
+            flash("Use your private manage link to replace photos.", "error")
+            return redirect_to_index()
+
         current_db = None if local_backend else init_firebase()
         if not local_backend and current_db is None:
             flash("Firebase is not configured on this deployment yet.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
         if not local_backend and not storage_ready():
             flash("Cloudinary is not configured on this deployment yet.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
 
         if "photo" not in request.files:
             flash("No file selected for replacement.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
 
         file = request.files["photo"]
         if file.filename == "":
             flash("No file selected for replacement.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
 
         if not allowed_file(file.filename):
             flash("Invalid file type.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
         if get_file_size_bytes(file) > MAX_FILE_SIZE_BYTES:
             flash(f"Replacement failed: file must be {MAX_FILE_SIZE_MB}MB or less.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
 
         if local_backend:
             data = get_local_photo(photo_id)
         else:
-            doc_ref = current_db.collection("photos").document(photo_id)
+            doc_ref = current_db.collection(firestore_collection_name("photos")).document(photo_id)
             doc = doc_ref.get(
                 retry=None,
                 timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS,
@@ -1064,7 +1221,7 @@ def replace(photo_id):
             data = doc.to_dict() if doc.exists else None
         if not data:
             flash("Featured photo not found.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
 
         section = (
             data.get("section")
@@ -1118,17 +1275,21 @@ def replace(photo_id):
         traceback.print_exc()
         flash(f"Replace failed: {str(e)}", "error")
 
-    return redirect(url_for("index"))
+    return redirect_to_index()
 
 
 @app.route("/delete/<photo_id>", methods=["POST"])
 def delete(photo_id):
     try:
+        if not site_manage_allowed():
+            flash("Use your private manage link to delete photos.", "error")
+            return redirect_to_index()
+
         local_backend = use_local_backend()
         current_db = None if local_backend else init_firebase()
         if not local_backend and current_db is None:
             flash("Firebase is not configured on this deployment yet.", "error")
-            return redirect(url_for("index"))
+            return redirect_to_index()
 
         if local_backend:
             data = get_local_photo(photo_id)
@@ -1137,15 +1298,16 @@ def delete(photo_id):
                 delete_local_photo(photo_id)
                 flash("Photo deleted.", "success")
         else:
-            doc = current_db.collection("photos").document(photo_id).get(
+            photo_ref = current_db.collection(firestore_collection_name("photos")).document(photo_id)
+            doc = photo_ref.get(
                 retry=None,
                 timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS
             )
             if not doc.exists:
-                return redirect(url_for("index"))
+                return redirect_to_index()
             data = doc.to_dict()
             delete_cloudinary_asset(data.get("public_id") or data.get("storage_path"))
-            current_db.collection("photos").document(photo_id).delete(
+            photo_ref.delete(
                 retry=None,
                 timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS
             )
@@ -1154,7 +1316,7 @@ def delete(photo_id):
         print(f"DELETE ERROR: {e}")
         flash("Delete failed.", "error")
 
-    return redirect(url_for("index"))
+    return redirect_to_index()
 
 
 @app.errorhandler(RequestEntityTooLarge)
